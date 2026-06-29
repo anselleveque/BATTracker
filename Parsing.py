@@ -30,26 +30,21 @@ def get_mileage(title):
     #make everthing int miles, so need to change km to mi using ratio factor
     t=title.lower()
     km_to_miles=0.621371
+    
+    found=re.search(r'([\d,]+)(k?)-(miles?|mi|kilometers?|km)',t)
+    if found:
+        number_value=int(found.group(1))
+        has_k=found.group(2)=="k"
+        unit=found.group(2)
 
-    #format of ##k-mile(s)/mi/kilometer(s)/km
-    found=re.search(r'([\d,]+)k-(miles?|mi|kilometers?|km)',t)
-    if found:
-        return int(found.group(1).replace(",",""))*1000
+        if has_k:
+            number_value=number_value*1000
+        if "kilometer" in unit or "km" in unit:
+            number_value=int(number_value*km_to_miles)
+        return number_value
+
     
-    #format of #,###-mile(s)/mi
-    found=re.search(r'([\d,]+)-(miles?|mi)',t)
-    if found:
-        return int(found.group(1).replace(",",""))
-    
-    #format of ##k-kilometer(s)/km
-    found=re.search(r'([\d,]+)k-(kilometers?|km)',t)
-    if found:
-        return int(int(found.group(1).replace(",",""))*1000*km_to_miles)
-    
-    #format of #,###-kilometer(s)/km
-    found=re.search(r'([\d,]+)-(kilometers?|km)',t)
-    if found:
-        return int(int(found.group(1).replace(",",""))*km_to_miles)
+
 
 
          
