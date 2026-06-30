@@ -8,7 +8,7 @@ tit="2014 Porsche 911 Turbo Coupe"
 subtit="Sold for USD $90,000  on 5/29/2026"
 
 def get_price(subtitle):
-    found=re.search(r'\$([0-9]+)', subtitle)
+    found=re.search(r'\$([0-9,]+)', subtitle)
     if found:
         return int(found.group(1).replace(",",""))
     return None

@@ -37,11 +37,15 @@ def get_sale_history(search,nonce,year_from=None,year_to=None):
             "results":"items"
         })
         if response.status_code!=200:
+            print("  got status", response.status_code, "- stopping")
             break
 
         data=response.json()
         items=data["items"]
         last_page=data["page_maximum"]
+
+        #Show how many pages (can use, not needed)
+        #print(" page", page, "of", last_page, "-", len(sold_cars), "cars so far")
 
         for item in items:
             title=item["title"]
@@ -62,9 +66,9 @@ def get_sale_history(search,nonce,year_from=None,year_to=None):
                 continue
 
             if year is not None:
-                if year is not None and year<year_from:
+                if year_from is not None and year<year_from:
                     continue
-                if year is not None and year>year_to:
+                if year_to is not None and year>year_to:
                     continue
 
             sold_cars.append(features)
