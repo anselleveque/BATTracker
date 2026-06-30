@@ -106,7 +106,7 @@ def get_features(title,subtitle):
         "is_manual":is_manual,
         "is_modified":"modified" in t,
         "is_project":"project" in t,
-        #"url":None
+        "url":None
 
     }
 
