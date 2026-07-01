@@ -17,7 +17,7 @@ def trimmed_mean(prices,trim_percent=5):
 
 def recent_average(cars):
     #Average of sales from last 2 years
-    now=datetime.now
+    now=datetime.now()
     recent_prices=[]
 
     for car in cars:
@@ -68,4 +68,4 @@ def deal_label(current_bid,estimate,threshold):
     else:
         direction="ABOVE"
 
-    return print(f"{verdict} {abs(round(percent))}% {direction} avg (${average:,}, n={estimate["count"]})")
+    return f"{verdict} {abs(round(percent))}% {direction} avg (${average:,}, n={estimate["count"]})"

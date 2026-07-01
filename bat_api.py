@@ -21,15 +21,16 @@ def get_nonce():
                 return found.group(1)
     return None
 
-def get_sale_history(search,nonce,year_from=None,year_to=None):
+def get_sale_history(search,nonce,year_from=None,year_to=None,max_pages=5):
     #Pulls every past sold listing that matches search
+    
     headers=bat_config.HEADERS.copy()
     headers["X-WP-Nonce"]=nonce
 
     sold_cars=[]
     page=1
 
-    while True:
+    while page<=max_pages:
         response=requests.get(bat_config.KEYWORD_API,headers=headers,params={
             #Params are URL query string
             "page":page,
@@ -76,14 +77,14 @@ def get_sale_history(search,nonce,year_from=None,year_to=None):
         if page>=last_page:
             break
         page=page+1
-        time.sleep(0.3)
+        time.sleep(0.1)
 
     return sold_cars
 
 def get_live_auctions():
     #Gets live auctions from BAT auctions page
 
-    with sync_playwright as p:
+    with sync_playwright() as p:
         browser=p.chromium.launch(
             headless=False,
             channel="chrome",
@@ -109,7 +110,7 @@ def get_live_auctions():
             browser.close()
             return []
         
-        raw=page.evaluate("()=>JSON.stringify(window.auctionsCurrentInitalData)")
+        raw=page.evaluate("()=>JSON.stringify(window.auctionsCurrentInitialData)")
         browser.close()
     if not raw:
         print("Auction data not found on page")
