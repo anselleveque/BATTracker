@@ -143,21 +143,41 @@ def get_listing_details(url):
             
             info=page.evaluate("""
                 ()=>{
-                    const el =[...document.querySelectorAll("ul,div")]
-                        .filter(e=>e.textContent.includes("Chassis")
-                            && (e.textContent.includes("Miles")
-                            || e.textContent.includes("Kilometers")))
-                        .slice(-1)[0];
+                    const markers=["Chassis","Miles","Kilometers","Transmission",
+                               "Transaxle","Paint","Upholstery","Wheels","Carfax","Lot #",]
+                    
+                    const candidates=[...document.querySelectorAll("ul,div")]
+                        .filter(e=>{
+                            let hits=0;
+                            for(const word of markers){
+                               if(e.textContent.includes(word)){
+                                    hits=hits+1
+                               }
+                            }
+                            return hits>=2;
+                        });
+                               
+                    let el=null;
+                    for (const e of candidates){
+                        if(el===null||e.textContent.length<el.textContent.length){
+                            el=e;
+                        }
+                    }
+
                     const h1=document.querySelector("h1");
-                    return {
-                            title: h1 ? h1.innerText: null,
-                            details: el ? el.innerText: null,
+                    return{
+                        title: h1 ? h1.innerText: null,
+                        details: el ? el.innerText: null,
                     };
                 }
             """)
             browser.close()
 
     return info
+
+url="https://bringatrailer.com/listing/1972-bmw-3-0csi-42/"
+info=get_listing_details(url)
+print(info)
 
 
 
