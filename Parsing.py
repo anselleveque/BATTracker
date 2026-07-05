@@ -37,7 +37,7 @@ def get_mileage(title):
     if found:
         number_value=int(found.group(1).replace(",",""))
         has_k=found.group(2)=="k"
-        unit=found.group(2)
+        unit=found.group(3)
 
         if has_k:
             number_value=number_value*1000
@@ -84,7 +84,7 @@ def get_features(title,subtitle):
         body ="coupe"
     elif "sedan" in t:
         body="sedan"
-    elif "roadster" in t:
+    elif "roadster" in t or "spyder" in t or "spider" in t:
         body="roadster"
     else:
         body="unknown"
@@ -109,6 +109,76 @@ def get_features(title,subtitle):
         "url":None
 
     }
+
+def parse_details(text):
+    #Search individual "listing details" for info on the car
+    #Used for deep dive
+    if not text:
+        return {}
+    
+    km_to_miles=0.621371
+    features={}
+
+    for line in text.split("\n"):
+        low=line.lower().strip()
+
+        #Chassis/vin number
+        if low.startswith("chassis"):
+            parts=line.split(":",1)
+            if len(parts)==2:
+                features["chassis"]=parts[1].strip()
+
+        #Mileage
+        found_mileage=re.search(r'([\d,]+)(k?)\s*kilometers',low)
+        if found_mileage and "mileage" not in features:
+            num=int(found_mileage.group(1).replace(",",""))
+            if found_mileage.group(2)=="k":
+                num=num*1000
+            features["mileage"]=int(km_to_miles)
+
+        #Engine
+        if "liter" in low or "flat-" in low or "inline-" in low or low.endswith("v6") or low.endswith("v8") or low.endswith("v10") or low.endswith("v12"):
+            features["engine"]=line.strip()
+
+        #Transmission
+        if "manual" in low:
+            features["is_manual"]=True
+        elif "automatic" in low:
+            features["is_auto"]=True
+        else:
+            features["is_manual"]=False
+            features["is_auto"]=False
+
+        #Paint Color
+        if "pts" in low or "paint-to-sample" in low:
+            found_paint=re.search(r'^(?:pts|paint-to-sample)?\s*\b([\w\s]+)',low)
+            if found_paint:
+                features["pts"]=True
+                features["color"]=found_paint.group(1).strip()
+        elif low.endswith("paint"):
+            features["color"]=line.strip()[:-5].strip()
+
+        #Non-original engine
+        if "replacement" in low or "non-matching" in low:
+            features["original_engine"]=False
+
+        #Documents
+        if "carfax" in low:
+            features["has_carfax"]=True
+        if "window_sticker" in low:
+            features["window_sticker"]=True
+        if "certificate of authenticity" in low or re.search(r'\boca\b',low):
+            features["coa"]=True
+        
+    return features
+
+            
+                
+
+        
+
+
+
 
 
 

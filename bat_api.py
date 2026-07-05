@@ -36,7 +36,7 @@ def get_sale_history(search,nonce,year_from=None,year_to=None,max_pages=5):
             "page":page,
             "s":search,
             "results":"items"
-        })
+        }, timeout=15)
         if response.status_code!=200:
             print("  got status", response.status_code, "- stopping")
             break
@@ -118,7 +118,48 @@ def get_live_auctions():
     
     return json.loads(raw)["items"]
 
+def get_listing_details(url):
+    #Loads one listing page from url
+    #Provides title and all auction details
+
+    with sync_playwright() as p:
         
+            browser=p.chromium.launch(
+                headless=False,
+                channel="chrome",
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            context=browser.new_context(
+                user_agent=bat_config.BROWSER_USER_AGENT,
+                viewport={"width":1200,"height":800},
+            )
+            context.add_init_script(
+                "Object.defineProperty(navigator,'webdriver', {get:()=>undefined})"
+            )
+
+            page=context.new_page()
+            page.goto(url,wait_until="domcontentloaded",timeout=60000)
+            page.wait_for_timeout(3000)
+            
+            info=page.evaluate("""
+                ()=>{
+                    const el =[...document.querySelectorAll("ul,div")]
+                        .filter(e=>e.textContent.includes("Chassis")
+                            && (e.textContent.includes("Miles")
+                            || e.textContent.includes("Kilometers")))
+                        .slice(-1)[0];
+                    const h1=document.querySelector("h1");
+                    return {
+                            title: h1 ? h1.innerText: null,
+                            details: el ? el.innerText: null,
+                    };
+                }
+            """)
+            browser.close()
+
+    return info
+
+
 
         
 

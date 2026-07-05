@@ -200,7 +200,7 @@ def handle_bid(raw,car):
         car["end"]=card["timestamp_end"]
     
     label=pricing.deal_label(car["current_bid"],car["estimate"],bat_config.DEAL_THRESHOLD)
-    bid_text="$"+format(car["current bid"], ",")
+    bid_text="$"+format(car["current_bid"], ",")
     print(f"New Bid: {time_left(car["end"])} | {bid_text} | {car["title"][:50]}")
     print(" ",label)
 

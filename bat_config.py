@@ -12,7 +12,7 @@ KEYWORD_API="https://bringatrailer.com/wp-json/bringatrailer/1.0/data/keyword-fi
 #User agent for playwright browser
 BROWSER_USER_AGENT=(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome 120.0.0.0 Safari 537.36"
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari 537.36"
 )
 
 #Percentage above/below average that is bad/good deal
