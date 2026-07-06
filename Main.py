@@ -70,7 +70,7 @@ def remove_body_words(search):
 
 #Stores cars already found in here
 _history_cache={}
-def get_estimate(title,keywords,nonce):
+def get_estimate(title,keywords,nonce,year_from=None,year_to=None):
     search=search_term(title)
     if search is None:
         return None
@@ -85,8 +85,9 @@ def get_estimate(title,keywords,nonce):
         #if search is too thin, drop body style first
         if len(history)<3:
             no_body_search=remove_body_words(search)+" "+keywords[0]
-            print(f"Too few results from {narrow_search}, dropping body style")
-            history=bat_api.get_sale_history(no_body_search,nonce)
+            if no_body_search!=narrow_search:
+                print(f"Too few results from {narrow_search}, dropping body style")
+                history=bat_api.get_sale_history(no_body_search,nonce)
 
             #If still too thin, drop keywords
             if len(history)<3:
@@ -96,16 +97,17 @@ def get_estimate(title,keywords,nonce):
         
     else:
         history=bat_api.get_sale_history(search,nonce)
-        #Try without keywords but with body
+        #Try without body
         if len(history)<3:
-            no_keyword_search=remove_body_words(search)
-            print(f"Too few results from {search}, dropping keywords from search")
-            history=bat_api.get_sale_history(no_keyword_search,nonce)
+            no_body_search=remove_body_words(search)
+            if no_body_search!=search:
+                print(f"Too few results from {search}, dropping keywords from search")
+                history=bat_api.get_sale_history(no_body_search,nonce)
     result=pricing.estimate_price(history)
     _history_cache[cache_key]=result
     return result
 
-def main():
+def main(seconds=None):
     brands=clean_list(input("Brands to watch (comma separated, or blank): "))
     models=clean_list(input("Models to watch (comma separated, or blank): "))
     keywords=clean_list(input("Keywords like manual/modified to add (comma separated, or blank): "))
@@ -115,6 +117,7 @@ def main():
 
     print("\nLoading auctions")
     auctions=bat_api.get_live_auctions()
+    now_ts=datetime.now(timezone.utc).timestamp()
 
     #Filter cars for input
     watched=[]
@@ -122,6 +125,11 @@ def main():
         title=item["title"]
     
         if not item.get("active"):
+            continue
+        ts=item.get("timestamp_end")
+        if not ts or ts<=now_ts:
+            continue
+        if seconds is not None and ts>now_ts+seconds:
             continue
         if not parsing.is_car(title):
             continue
@@ -135,12 +143,13 @@ def main():
         estimate=get_estimate(title,keywords,nonce)
         print(" checked", title[:50])
 
+
         car={
             "title":title,
             "url":item["url"],
             "channel":item["pusher"],
             "current_bid":item["current_bid"],
-            "end":item["timestamp_end"],
+            "end":ts,
             "estimate":estimate,
         }
         watched.append(car)
@@ -204,8 +213,8 @@ def handle_bid(raw,car):
     print(f"New Bid: {time_left(car["end"])} | {bid_text} | {car["title"][:50]}")
     print(" ",label)
 
-main()
-
+if __name__=="__main__":
+    main(seconds=86400)
 
 
 

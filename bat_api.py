@@ -175,10 +175,6 @@ def get_listing_details(url):
 
     return info
 
-url="https://bringatrailer.com/listing/1972-bmw-3-0csi-42/"
-info=get_listing_details(url)
-print(info)
-
 
 
         

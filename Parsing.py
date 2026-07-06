@@ -4,8 +4,6 @@
 
 import re
 from datetime import datetime
-tit="2014 Porsche 911 Turbo Coupe"
-subtit="Sold for USD $90,000  on 5/29/2026"
 
 def get_price(subtitle):
     found=re.search(r'\$([0-9,]+)', subtitle)
@@ -33,7 +31,7 @@ def get_mileage(title):
     t=title.lower()
     km_to_miles=0.621371
     
-    found=re.search(r'([\d,]+)(k?)-(miles?|mi|kilometers?|km)',t)
+    found=re.search(r'([\d,]+)(k?)[\s-]+(miles?|mi|kilometers?|km)\b',t)
     if found:
         number_value=int(found.group(1).replace(",",""))
         has_k=found.group(2)=="k"
@@ -94,6 +92,17 @@ def get_features(title,subtitle):
     is_manual=False
     if "manual" in t or "-speed" in t:
         is_manual=True
+
+    #Gear count
+    gears=None
+    found_gears=re.search(r'(\d+)-speed',t)
+    if found_gears:
+        gears=int(found_gears.group(1))
+
+    #Trans swap said in title
+    trans_swap=bool(re.search(r'\d+-speed\s+(conversion|swap)',t))
+
+
     
     return{
         "title":title,
@@ -106,6 +115,8 @@ def get_features(title,subtitle):
         "is_manual":is_manual,
         "is_modified":"modified" in t,
         "is_project":"project" in t,
+        "gears":gears,
+        "trans_swap":trans_swap,
         "url":None
 
     }
@@ -115,7 +126,6 @@ def parse_details(text):
     #Used for deep dive
     if not text:
         return {}
-    
     km_to_miles=0.621371
     features={}
 
@@ -128,47 +138,74 @@ def parse_details(text):
             if len(parts)==2:
                 features["chassis"]=parts[1].strip()
 
-        #Mileage
-        found_mileage=re.search(r'([\d,]+)(k?)\s*kilometers',low)
-        if found_mileage and "mileage" not in features:
-            num=int(found_mileage.group(1).replace(",",""))
-            if found_mileage.group(2)=="k":
+        #Mileage (mi)
+        found_mi=re.search(r'([\d,]+)(k?)\s*miles',low)
+        if found_mi:
+            num=int(found_mi.group(1).replace(",",""))
+            if found_mi.group(2)=="k":
                 num=num*1000
-            features["mileage"]=int(km_to_miles)
+            features["mileage"]=num
+        
+        #Mileage (km)
+        found_km=re.search(r'([\d,]+)(k?)\s*kilometers',low)
+        if found_km and "mileage" not in features:
+            num=int(found_km.group(1).replace(",",""))
+            if found_km.group(2)=="k":
+                num=num*1000
+            features["mileage"]=int(num*km_to_miles)
 
         #Engine
         if "liter" in low or "flat-" in low or "inline-" in low or low.endswith("v6") or low.endswith("v8") or low.endswith("v10") or low.endswith("v12"):
             features["engine"]=line.strip()
 
         #Transmission
-        if "manual" in low:
-            features["is_manual"]=True
-        elif "automatic" in low:
-            features["is_auto"]=True
-        else:
-            features["is_manual"]=False
-            features["is_auto"]=False
+        if "transmission" in low or "transaxle" in low or "gearbox" in low:
+            if "manual" in low:
+                features["is_manual"]=True
+            else:
+                features["is_manual"]=False
 
+            #Gear count
+            words_to_numbers={"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8}
+            found_gears=re.search(r'(\d+)-speed',low)
+            if found_gears:
+                features["gears"]=int(found_gears.group(1))
+            else:
+                for word,number in words_to_numbers.items():
+                    if word+"speed" in low:
+                        features["gears"]=number
+
+            #Swapped/converted gearbox
+            if "replacement" in low or "conversion" in low or "swap" in low:
+                features["trans_swap"]=True
+        
         #Paint Color
-        if "pts" in low or "paint-to-sample" in low:
-            found_paint=re.search(r'^(?:pts|paint-to-sample)?\s*\b([\w\s]+)',low)
-            if found_paint:
-                features["pts"]=True
-                features["color"]=found_paint.group(1).strip()
+        if re.search(r'\bpts\b',low) or "paint-to-sample" in low:
+            features["pts"]=True
+            color=line
+
+            color=re.sub(r'(?i)paint[- ]to[- ]sample','',color)
+            color=re.sub(r'(?i)\bpts\b','',color)
+            color=re.sub(r'\bpaint\b','',color)
+            features["color"]=color.strip()
         elif low.endswith("paint"):
             features["color"]=line.strip()[:-5].strip()
 
         #Non-original engine
         if "replacement" in low or "non-matching" in low:
-            features["original_engine"]=False
+            if "transmission" not in low and "transaxle" not in low and "gearbox" not in low:
+                features["original_engine"]=False
 
         #Documents
         if "carfax" in low:
             features["has_carfax"]=True
         if "window_sticker" in low:
             features["window_sticker"]=True
-        if "certificate of authenticity" in low or re.search(r'\boca\b',low):
+        if "certificate of authenticity" in low or re.search(r'\bcoa\b',low):
             features["coa"]=True
+
+        if "original_engine" not in features:
+            features["original_engine"]=True
         
     return features
 
