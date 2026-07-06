@@ -192,9 +192,11 @@ def parse_details(text):
             features["color"]=line.strip()[:-5].strip()
 
         #Non-original engine
-        if "replacement" in low or "non-matching" in low:
+        if "replacement" in low or "non-matching" in low or "-powered" in low:
             if "transmission" not in low and "transaxle" not in low and "gearbox" not in low:
                 features["original_engine"]=False
+        else:
+            features["original_engine"]=True
 
         #Documents
         if "carfax" in low:
@@ -204,8 +206,7 @@ def parse_details(text):
         if "certificate of authenticity" in low or re.search(r'\bcoa\b',low):
             features["coa"]=True
 
-        if "original_engine" not in features:
-            features["original_engine"]=True
+      
         
     return features
 
