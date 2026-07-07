@@ -163,6 +163,16 @@ def get_listing_details(url):
                             el=e;
                         }
                     }
+                    //description is biggest block of text on page, so look for that
+                    let description=null;
+                    const paras=[...document.querySelectorAll("p,div")]
+                            .map(e=>e.innerText)
+                            .filer(t=>t&&t.length>200);
+                    for(const t of paras){
+                        if(description===null||t.length>description.length){
+                            description=t;
+                        }
+                    }
 
                     const h1=document.querySelector("h1");
                     return{
