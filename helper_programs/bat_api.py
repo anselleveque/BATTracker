@@ -5,8 +5,8 @@ import re
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-import bat_config
-import parsing
+import live_tracker.bat_config as bat_config
+import helper_programs.parsing as parsing
 
 def get_nonce():
     #BAT needs nonce to allow a search

@@ -6,10 +6,10 @@ import re
 from datetime import datetime, timezone
 import pysher
 
-import bat_config
-import bat_api
-import pricing
-import parsing
+import live_tracker.bat_config as bat_config
+import helper_programs.bat_api as bat_api
+import helper_programs.pricing as pricing
+import helper_programs.parsing as parsing
 
 def clean_list(text):
     return [word.strip().lower() for word in text.split(",") if word.strip()!=""]

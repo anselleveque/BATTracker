@@ -23,29 +23,6 @@ Return only the JSON, no other text.
 Description:
 {text}"""
 
-def setup_cache():
-    #Make table if not existing
-    con=sqlite3.connect(CACHE_DB)
-    con.execute("CREATE TABLE IF NOT EXISTS listings(url TEXT PRIMARY KEY, features TEXT)")
-    con.commit()
-    con.close()
-
-def cache_get(url):
-    #Saved features for url, or none if not parsed before
-    con=sqlite3.connect(CACHE_DB)
-    row=con.execute("SELECT features FROM listings WHERE url=?",(url,)).fetchone()
-    con.close()
-    if row:
-        return json.loads(row[0])
-    return None
-
-def cache_put(url,features):
-    #Save or overwrite url features
-    con=sqlite3.connect(CACHE_DB)
-    con.execute("INSERT OR REPLACE INTO listings(url,features) VALUES(?,?)",(url,json.dumps(features)))
-    con.commit()
-    con.close()
-
 def ask_qwen(text):
     payload={
         "model":MODEL,
@@ -61,19 +38,11 @@ def ask_qwen(text):
     answer=response.json()["response"]
     return json.loads(answer)
 
-def extract_features(url,description,use_cache=True):
-    #Get condition for one listing
-    #Check cache first
-    if use_cache:
-        cached=cache_get(url)
-        if cached is not None:
-            return cached
-        
-    if not description:
-        return {}
-    
+def parse_condition(description):
+    #Run description through Qwen
+    #Return condition info
     try:
-        features=ask_qwen(description)
+        feats=ask_qwen(description)
     except requests.exceptions.RequestException as e:
         print(f" model call failed, ollama running?: {e}")
         return {}
@@ -81,11 +50,8 @@ def extract_features(url,description,use_cache=True):
         print(f" model gave bad output, skipping: {e}")
         return {}
     
-    #Make sure grade is in list
     allowed=["concours","excellent","driver","project"]
-    if features.get("condition_grade") not in allowed:
-        features.pop("condition_grade",None)
-
-    if use_cache:
-        cache_put(url,features)
-    return features
+    if feats.get("condition_grade") not in allowed:
+        feats.pop("condition_grade",None)
+    return feats
+    

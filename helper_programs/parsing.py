@@ -99,10 +99,6 @@ def get_features(title,subtitle):
     if found_gears:
         gears=int(found_gears.group(1))
 
-    #Trans swap said in title
-    trans_swap=bool(re.search(r'\d+-speed\s+(conversion|swap)',t))
-
-
     
     return{
         "title":title,
@@ -116,7 +112,6 @@ def get_features(title,subtitle):
         "is_modified":"modified" in t,
         "is_project":"project" in t,
         "gears":gears,
-        "trans_swap":trans_swap,
         "url":None
 
     }
@@ -175,9 +170,6 @@ def parse_details(text):
                     if word+"speed" in low:
                         features["gears"]=number
 
-            #Swapped/converted gearbox
-            if "replacement" in low or "conversion" in low or "swap" in low:
-                features["trans_swap"]=True
         
         #Paint Color
         if re.search(r'\bpts\b',low) or "paint-to-sample" in low:

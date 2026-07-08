@@ -1,8 +1,8 @@
-import bat_api
-import parsing
-import pricing
-import bayesian
-from main import search_term,remove_body_words
+import helper_programs.bat_api as bat_api
+import helper_programs.parsing as parsing
+import helper_programs.pricing as pricing
+import deep_dive_stats.bayesian as bayesian
+from live_tracker.main import search_term,remove_body_words
 
 def show_percent(value):
     return f"{value*100:+.0f}%" if value else None
@@ -35,6 +35,7 @@ def get_comps(search,nonce,year,window=4):
     return history
 
 def main():
+
     listing_url=input("URL of specific listing to price: ").strip()
     window_input=input("Year window +/- (blank for auto +4/-4): ").strip()
 
@@ -57,6 +58,7 @@ def main():
                 "year":from_title["year"],
                 "mileage":details.get("mileage",from_title["mileage"]),
                 "is_manual":details.get("is_manual",from_title["is_manual"]),
+                "gears":from_title["gears"],
                 "is_modified":from_title["is_modified"],
                 "is_project":from_title["is_project"],
                 "body":from_title["body"],
