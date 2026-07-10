@@ -163,21 +163,29 @@ def get_listing_details(url):
                             el=e;
                         }
                     }
-                    //description is biggest block of text on page, so look for that
                     let description=null;
-                    const paras=[...document.querySelectorAll("p,div")]
-                            .map(e=>e.innerText)
-                            .filter(t=>t&&t.length>200);
-                    for(const t of paras){
-                        if(description===null||t.length>description.length){
-                            description=t;
+                    const excerpt=document.querySelector(".post-excerpt");
+                    if(excerpt){
+                        description=excerpt.innerText;
+                    } else {
+                        let parts=[];
+                        const ps=[...document.querySelectorAll("p")];
+                        for(const p of ps){
+                            const t=(p.innerText||"").trim();
+                            const low=t.toLowerCase();
+                            if(low.includes("comments")) break;
+                            if(low.includes("register to bid")) break;
+                            if(t.length<40) continue;
+                            parts.push(t);
                         }
+                        description=parts.length>0 ? parts.join("\\n\\n"): null;
                     }
 
                     const h1=document.querySelector("h1");
                     return{
                         title: h1 ? h1.innerText: null,
                         details: el ? el.innerText: null,
+                        description: description,
                     };
                 }
             """)
