@@ -25,8 +25,8 @@ def setup():
                 is_modified INTEGER,
                 is_project INTEGER,
                 condition_grade TEXT,
-                matching_engine TEXT,
-                matching_trans TEXT,
+                matching_engine INTEGER,
+                matching_trans INTEGER,
                 rust_mentioned INTEGER,
                 recent_service INTEGER,
                 notable_flaws TEXT,
@@ -47,7 +47,7 @@ def save_comps(cars):
                     (url,title,price,year,mileage,sale_date,body,is_manual,gears,engine,
                     is_modified,is_project,enriched)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)""",
-            (car.get("url"),car.get("title"),car.get("price"),car.get("mileage"),
+            (car.get("url"),car.get("title"),car.get("price"),car.get("year"),car.get("mileage"),
              date_text,car.get("body"),
              int(bool(car.get("is_manual"))),car.get("gears"),car.get("engine"),
              int(bool(car.get("is_modified"))),int(bool(car.get("is_project")))))
@@ -92,11 +92,30 @@ def load_comps(search_words,year_from=None,year_to=None):
             "condition_grade":row["condition_grade"],
             "matching_engine":row["matching_engine"],
             "matching_trans":row["matching_trans"],
-            "rust_mentioned":row["matching_trans"],
+            "rust_mentioned":row["rust_mentioned"],
             "recent_service":row["recent_service"],
+            "flaw_count":count_flaws(row["notable_flaws"])
         })
 
     return comps
+
+def get_condition(url):
+    #Return condition for sale
+    #If not none, skip parsing condition again
+    con=sqlite3.connect(DB)
+    con.row_factory=sqlite3.Row
+    row=con.execute("SELECT * FROM sales WHERE url=? AND enriched=1",(url,)).fetchone()
+    con.close()
+    if row is None:
+        return None
+    return{
+        "condition_grade":row["condition_grade"],
+        "matching_engine":row["matching_engine"],
+        "matching_trans":row["matching_trans"],
+        "rust_mentioned":row["rust_mentioned"],
+        "recent_service":row["recent_service"],
+        "flaw_count":count_flaws(row["notable_flaws"]),
+    }
 
 def needs_enrichment(limit):
     #Return up to limit saved urls that have unfetched conditio
@@ -108,6 +127,7 @@ def needs_enrichment(limit):
 def save_condition(url,features):
     #Get condition fields and mark enriched
     con=sqlite3.connect(DB)
+    con.execute("INSERT OR IGNORE INTO sales(url,enriched) VALUES(?,0)",(url,))
     flaws=json.dumps(features.get("notable_flaws",[]))
     con.execute("""UPDATE sales SET
                 condition_grade=?,matching_engine=?,matching_trans=?,
@@ -127,10 +147,30 @@ def to_int_or_none(value):
         return None
     return int(bool(value))
 
+def count_flaws(flaws_text):
+    #Count num of flaws
+    #If None, model not parsed,!=0 flaws
+    if flaws_text is None:
+        return None
+    try:
+        return len(json.loads(flaws_text))
+    except json.JSONDecodeError:
+        return None
+
 def stats():
     con=sqlite3.connect(DB)
     total=con.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
     enriched=con.execute("SELECT COUNT(*) FROM sales WHERE enriched=1").fetchone()[0]
     con.close()
     return total,enriched
-        
+
+def clear_database():
+    #CLEARS ALL RECORDS FROM DB
+    #USE CAREFULLY
+    con=sqlite3.connect(DB)
+    con.execute("DELETE FROM sales")
+    con.commit()
+    con.close()
+    print("Database cleared")
+
+

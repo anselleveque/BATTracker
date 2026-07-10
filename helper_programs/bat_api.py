@@ -167,7 +167,7 @@ def get_listing_details(url):
                     let description=null;
                     const paras=[...document.querySelectorAll("p,div")]
                             .map(e=>e.innerText)
-                            .filer(t=>t&&t.length>200);
+                            .filter(t=>t&&t.length>200);
                     for(const t of paras){
                         if(description===null||t.length>description.length){
                             description=t;

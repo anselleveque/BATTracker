@@ -3,15 +3,14 @@
 
 import requests
 import json
-import sqlite3
 
 OLLAMA_URL="http://localhost:11434/api/generate"
-MODEL="qwen2.5:7b"
+MODEL="qwen2.5:3b"
 CACHE_DB="listing_cache.db"
 
 PROMPT="""You are extracting facts from a car auction description.
 Read the text and return ONLY a JSON object with these exact fields:
--condition_grade: one of "concours", "excellent", "driver", "project"
+-condition_grade: one of "concours","excellent","driver","decent","project"
 -matching_engine: true or false (is the engine original)
 -matching_trans: true or false (is the transmission original)
 -rust_mentioned: true or false
@@ -32,7 +31,7 @@ def ask_qwen(text):
         #Temperature:0 makes qwen repeat same answer as much as possible
         "options":{"temperature":0},
     }
-    response=requests.post(OLLAMA_URL,json=payload,timeout=120)
+    response=requests.post(OLLAMA_URL,json=payload,timeout=600)
     response.raise_for_status()
     #JSON is in response field
     answer=response.json()["response"]
@@ -50,7 +49,7 @@ def parse_condition(description):
         print(f" model gave bad output, skipping: {e}")
         return {}
     
-    allowed=["concours","excellent","driver","project"]
+    allowed=["concours","excellent","driver","decent","project"]
     if feats.get("condition_grade") not in allowed:
         feats.pop("condition_grade",None)
     return feats

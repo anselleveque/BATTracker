@@ -2,10 +2,26 @@ import helper_programs.bat_api as bat_api
 import helper_programs.parsing as parsing
 import helper_programs.pricing as pricing
 import deep_dive_stats.bayesian as bayesian
+import deep_dive_stats.sales_db as sales_db
+import deep_dive_stats.llm_extract as llm_extract
 from live_tracker.main import search_term,remove_body_words
 
 def show_percent(value):
-    return f"{value*100:+.0f}%" if value else None
+    if not value:
+        return None
+    try:
+        num_value=float(value)
+        return f"{num_value*100:+.0f}%"
+    except (ValueError,TypeError):
+        return str(value)
+
+def count_flaws(condition):
+    if "flaw_count" in condition:
+        return condition["flaw_count"]
+    flaws=condition.get("notable_flaws")
+    if flaws is None:
+        return None
+    return len(flaws)
 
 def count_usable(cars):
     count=0
@@ -27,7 +43,7 @@ def get_comps(search,nonce,year,window=4):
 
     history=[]
     for s,y1,y2,label in tiers:
-        print(f"Searching '{s} ({label})")
+        print(f"Searching '{s}' ({label})")
         history=bat_api.get_sale_history(s,nonce,y1,y2,max_pages=100)
         print(f" {len(history)} sales, {count_usable(history)} usable for the model")
         if count_usable(history)>=15:
@@ -35,6 +51,7 @@ def get_comps(search,nonce,year,window=4):
     return history
 
 def main():
+    sales_db.setup()
 
     listing_url=input("URL of specific listing to price: ").strip()
     window_input=input("Year window +/- (blank for auto +4/-4): ").strip()
@@ -54,7 +71,17 @@ def main():
     details=parsing.parse_details(info["details"])
     from_title=parsing.get_features(title,"")
 
+    #Condition for this car
+    #Checks database first
+    target_condition=sales_db.get_condition(listing_url)
+    if target_condition is None:
+        target_condition={}
+        if info.get("description"):
+            target_condition=llm_extract.parse_condition(info["description"])
+            sales_db.save_condition(listing_url,target_condition)
+
     target_car={
+                "condition_grade":target_condition.get("condition_grade"),
                 "year":from_title["year"],
                 "mileage":details.get("mileage",from_title["mileage"]),
                 "is_manual":details.get("is_manual",from_title["is_manual"]),
@@ -63,10 +90,16 @@ def main():
                 "is_project":from_title["is_project"],
                 "body":from_title["body"],
                 "engine":from_title["engine"],
+                "condition_grade":target_condition.get("condition_grade"),
+                "matching_engine":target_condition.get("matching_engine"),
+                "matching_trans":target_condition.get("matching_trans"),
+                "flaw_count":count_flaws(target_condition),
             }
     
     print("\nThis car: ")
     print(" title:",title[:70])
+    if target_car["condition_grade"]:
+        print(f" condition: {target_car["condition_grade"]}")
     if target_car["mileage"] is not None:
         print(f" mileage: {target_car["mileage"]:,} miles")
     print(f" manual: {target_car["is_manual"]}")
@@ -84,14 +117,27 @@ def main():
     #Build search term from url title
     search=search_term(title)
     if search is None:
-        print("\nCould not find  title to build search")
+        print("\nCould not find year in title to build search")
         return
+    
+    #Try local db
+    year=target_car["year"]
+    search_words=search.lower().split()
+    if year:
+        history=sales_db.load_comps(search_words,year-window,year+window)
+    else:
+        history=sales_db.load_comps(search_words)
 
-    print("\nGetting Nonce")
-    nonce=bat_api.get_nonce()
-
-    print("Getting sale history")
-    history=get_comps(search,nonce,target_car["year"],window)
+    if len(history)>3:
+        print(f"\nUsing {len(history)} comps from DB")
+    else:
+        print(f"\nDB has too few/none for car, fetching live")
+        print("\nRun build_database.py on this model to get condition info")
+        print("\nGetting Nonce")
+        nonce=bat_api.get_nonce()
+        history=get_comps(search,nonce,year,window)
+        sales_db.save_comps(history)
+    
     if len(history)<3:
         print("Too few comparable sales")
         return
@@ -118,17 +164,21 @@ def main():
 
     effects=result["effects"]
     print("\nWhat model learned: ")
-    print(f" each 10k miles more: {show_percent(effects["per_10k_miles"] if effects["per_10k_miles"] is not None else None)}")
-    print(" per year newer: ",show_percent(effects["per_year"]))
-    print(" manual gearbox: ",show_percent(effects["manual"]))
-    print(" modified: ",show_percent(effects["modified"]))
-    print(" project car: ",show_percent(effects["project"]))
-    print(" engine swap: ",show_percent(effects["engine_swap"]))
-    print(" cabriolet vs coupe: ",show_percent(effects["cabriolet_vs_coupe"]))
-    print(" targa vs coupe: ",show_percent(effects["targa_vs_coupe"]))
-    print(" sedan vs coupe: ",show_percent(effects["sedan_vs_coupe"]))
-    print(" roadster vs coupe: ",show_percent(effects["roadster_vs_coupe"]))
-    print(" market trend per year: ",show_percent(effects["market_per_year"]))
+    print(f" each 10k miles more: {show_percent(effects["per_10k_miles"] if effects["per_10k_miles"] is not None else "No miles data")}")
+    print(f" per year newer: {show_percent(effects["per_year"])}")
+    print(f" per extra gear: {show_percent(effects["per_gear"])}")
+    print(f" per condition step: {show_percent(effects["per_condition_step"] if effects["per_condition_step"] is not None else "No condition data")}")
+    print(f" matching engine: {show_percent(effects["matching_engine"] if effects["matching_engine"] is not None else "No matching engine data")}")
+    print(f" matching trans: {show_percent(effects["matching_trans"] if effects["matching_trans"] is not None else "No matching trans data")}")
+    print(f" per flaw noted: {show_percent(effects["per_flaw"] if effects["per_flaw"] is not None else "No flaw data")}")
+    print(f" manual gearbox: {show_percent(effects["manual"])}")
+    print(f" modified: {show_percent(effects["modified"])}")
+    print(f" project car: {show_percent(effects["project"])}")
+    print(f" cabriolet vs coupe: {show_percent(effects["cabriolet_vs_coupe"])}")
+    print(f" targa vs coupe: {show_percent(effects["targa_vs_coupe"])}")
+    print(f" sedan vs coupe: {show_percent(effects["sedan_vs_coupe"])}")
+    print(f" roadster vs coupe: {show_percent(effects["roadster_vs_coupe"])}")
+    print(f" market trend per year: {show_percent(effects["market_per_year"])}")
 
     
 
