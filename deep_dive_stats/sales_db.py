@@ -22,6 +22,7 @@ def setup():
                 is_manual INTEGER,
                 gears INTEGER,
                 engine TEXT,
+                model TEXT,
                 is_modified INTEGER,
                 is_project INTEGER,
                 condition_grade TEXT,
@@ -54,7 +55,7 @@ def save_comps(cars):
     con.commit()
     con.close()
 
-def load_comps(search_words,year_from=None,year_to=None):
+def load_comps(search_words,year_from=None,year_to=None,model=None):
     #Read matching sales from databse
     con=sqlite3.connect(DB)
     con.row_factory=sqlite3.Row
@@ -64,9 +65,14 @@ def load_comps(search_words,year_from=None,year_to=None):
     from datetime import datetime
     comps=[]
     for row in rows:
-        title=(row["title"] or "").lower()
-        if not all(word in title for word in search_words):
-            continue
+        if model is not None and row["model"] is not None:
+            if row["model"].lower()!=model.lower():
+                continue
+        else:
+            title=(row["title"] or "").lower()
+            if not all(word in title for word in search_words):
+                continue
+
         if year_from is not None and row["year"] is not None and row["year"]<year_from:
             continue
         if year_to is not None and row["year"] is not None and row["year"]>year_to:
@@ -80,8 +86,10 @@ def load_comps(search_words,year_from=None,year_to=None):
         comps.append({
             "url":row["url"],
             "title":row["title"],
+            "model":row["model"],
             "price":row["price"],
             "year":row["year"],
+            "mileage":row["mileage"],
             "sale_date":date,
             "body":row["body"],
             "is_manual":bool(row["is_manual"]),
@@ -115,6 +123,7 @@ def get_condition(url):
         "rust_mentioned":row["rust_mentioned"],
         "recent_service":row["recent_service"],
         "flaw_count":count_flaws(row["notable_flaws"]),
+        "model":row["model"],
     }
 
 def needs_enrichment(limit):
@@ -124,21 +133,22 @@ def needs_enrichment(limit):
     con.close()
     return [row[0] for row in rows]
 
-def save_condition(url,features):
+def save_condition(url,features,model=None):
     #Get condition fields and mark enriched
     con=sqlite3.connect(DB)
     con.execute("INSERT OR IGNORE INTO sales(url,enriched) VALUES(?,0)",(url,))
     flaws=json.dumps(features.get("notable_flaws",[]))
     con.execute("""UPDATE sales SET
                 condition_grade=?,matching_engine=?,matching_trans=?,
-                rust_mentioned=?, recent_service=?,notable_flaws=?,enriched=1
+                rust_mentioned=?, recent_service=?,notable_flaws=?,
+                model=?,enriched=1
                 WHERE url=?""",
                 (features.get("condition_grade"),
                 to_int_or_none(features.get("matching_engine")),
                 to_int_or_none(features.get("matching_trans")),
                 to_int_or_none(features.get("rust_mentioned")),
                 to_int_or_none(features.get("recent_service")),
-                flaws,url))
+                flaws,model,url))
     con.commit()
     con.close()
 

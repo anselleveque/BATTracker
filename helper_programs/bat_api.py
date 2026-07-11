@@ -163,6 +163,7 @@ def get_listing_details(url):
                             el=e;
                         }
                     }
+                               
                     let description=null;
                     const excerpt=document.querySelector(".post-excerpt");
                     if(excerpt){
@@ -181,11 +182,26 @@ def get_listing_details(url):
                         description=parts.length>0 ? parts.join("\\n\\n"): null;
                     }
 
+                    let model=null;
+                    const groups=[...document.querySelectorAll(".group-link,.group-item")];
+                    for(const g of groups){
+                        const label=g.querySelector(".group-title-label");
+                        if(label&&label.innerText.trim()==="Model"){
+                            let t=(g.innerText||"").trim();
+                            if(t.startsWith("Model")){
+                               t=t.slice(5);
+                            }
+                            model=t.trim()||null;
+                            break;
+                        }
+                    }
+
                     const h1=document.querySelector("h1");
                     return{
                         title: h1 ? h1.innerText: null,
                         details: el ? el.innerText: null,
                         description: description,
+                        model:model,
                     };
                 }
             """)

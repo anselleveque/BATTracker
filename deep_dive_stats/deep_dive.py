@@ -30,12 +30,12 @@ def count_usable(cars):
             count+=1
     return count
     
-def get_comps(search,nonce,year,window=4):
+def get_comps(search,nonce,year,top_window=4,bottom_window=4):
     #Drop year and body style before trim
     #Never fall back to just make/model
     tiers=[]
     if year:
-        tiers.append((search,year-window,year+window,f"years {year-window}-{year+window}"))
+        tiers.append((search,year-bottom_window,year+top_window,f"years {year-bottom_window}-{year+top_window}"))
     tiers.append((search,None,None,"all years"))
     no_body=remove_body_words(search)
     if no_body!=search:
@@ -54,12 +54,17 @@ def main():
     sales_db.setup()
 
     listing_url=input("URL of specific listing to price: ").strip()
-    window_input=input("Year window +/- (blank for auto +4/-4): ").strip()
+    top_window_input=input("Year window + (blank for auto +4): ").strip()
+    bottom_window_input=input("Year window - (blank for auto -4): ")
 
-    if window_input=="":
-        window=4
+    if top_window_input=="":
+        top_window=4
     else:
-        window=int(window_input)
+        top_window=int(top_window_input)
+    if bottom_window_input=="":
+        bottom_window=4
+    else:
+        bottom_window=int(bottom_window_input)
 
     print("\nGetting Listing")
     info=bat_api.get_listing_details(listing_url)
@@ -98,6 +103,9 @@ def main():
     
     print("\nThis car: ")
     print(" title:",title[:70])
+    target_model=info.get("model")
+    if target_model:
+        print(f" model: {target_model}")
     if target_car["condition_grade"]:
         print(f" condition: {target_car["condition_grade"]}")
     if target_car["mileage"] is not None:
@@ -124,9 +132,9 @@ def main():
     year=target_car["year"]
     search_words=search.lower().split()
     if year:
-        history=sales_db.load_comps(search_words,year-window,year+window)
+        history=sales_db.load_comps(search_words,year-bottom_window,year+top_window,target_model)
     else:
-        history=sales_db.load_comps(search_words)
+        history=sales_db.load_comps(search_words,None,None,target_model)
 
     if len(history)>3:
         print(f"\nUsing {len(history)} comps from DB")
@@ -135,7 +143,7 @@ def main():
         print("\nRun build_database.py on this model to get condition info")
         print("\nGetting Nonce")
         nonce=bat_api.get_nonce()
-        history=get_comps(search,nonce,year,window)
+        history=get_comps(search,nonce,year,top_window,bottom_window)
         sales_db.save_comps(history)
     
     if len(history)<3:

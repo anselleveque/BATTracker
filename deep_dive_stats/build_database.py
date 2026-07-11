@@ -45,14 +45,17 @@ def build(search,year_from=None,year_to=None):
         if info and info.get("description"):
             feats=llm_extract.parse_condition(info["description"])
             if feats:
-                sales_db.save_condition(url,feats)
+                sales_db.save_condition(url,feats,info.get("model"))
                 done+=1
             else:
                 print(" parse failed, retrying next run")
                 failed+=1
-        else:
-            sales_db.save_condition(url,{})
+        elif info:
+            sales_db.save_condition(url,{},info.get("model"))
             done+=1
+        else:
+            print(" page returned nothing, retrying next run")
+            failed+=1
 
         time.sleep(DELAY)
 
