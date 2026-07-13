@@ -11,7 +11,8 @@ For inputs, first put models (Porsche,BMW,Honda, etc), then models (911,M3,Civic
 Keywords will be dropped first, so use them as extra qualifiers (6-speed,manual,10k-miles,etc)
 
 ## **Deep Dive**
-To run the deep dive, run deep_dive.py and input the URL of the car you want to analyze
+To run the deep dive, first run build_database.py. This will build a database of whatever car/brand you input
+Next, run deep_dive.py and input the URL of the car you want to analyze. Ensure that the database for that model is built
 It will look at the titles of all previous sales and predict a price of the car, with a 90% interval in addition
 
 ## **Future Plans**
