@@ -5,3 +5,4 @@ __pycache__/
 .vscode/
 tempCodeRunnerFile.py
 flow.md
+sales.db

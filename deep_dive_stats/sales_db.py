@@ -23,6 +23,9 @@ def setup():
                 gears INTEGER,
                 engine TEXT,
                 model TEXT,
+                sold INTEGER,
+                description TEXT,
+                chassis TEXT,
                 is_modified INTEGER,
                 is_project INTEGER,
                 condition_grade TEXT,
@@ -46,16 +49,16 @@ def save_comps(cars):
             date_text=""
         con.execute("""INSERT OR IGNORE INTO sales
                     (url,title,price,year,mileage,sale_date,body,is_manual,gears,engine,
-                    is_modified,is_project,enriched)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+                    is_modified,is_project,sold,enriched)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
             (car.get("url"),car.get("title"),car.get("price"),car.get("year"),car.get("mileage"),
              date_text,car.get("body"),
              int(bool(car.get("is_manual"))),car.get("gears"),car.get("engine"),
-             int(bool(car.get("is_modified"))),int(bool(car.get("is_project")))))
+             int(bool(car.get("is_modified"))),int(bool(car.get("is_project"))),to_int_or_none(car.get("sold"))))
     con.commit()
     con.close()
 
-def load_comps(search_words,year_from=None,year_to=None,model=None):
+def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years=None):
     #Read matching sales from databse
     con=sqlite3.connect(DB)
     con.row_factory=sqlite3.Row
@@ -65,6 +68,10 @@ def load_comps(search_words,year_from=None,year_to=None,model=None):
     from datetime import datetime
     comps=[]
     for row in rows:
+        #skip auctions that didn't sell
+        if row["sold"] is not None and row["sold"]==0:
+            continue
+
         if model is not None and row["model"] is not None:
             if row["model"].lower()!=model.lower():
                 continue
@@ -83,6 +90,11 @@ def load_comps(search_words,year_from=None,year_to=None,model=None):
             date=datetime.strptime(row["sale_date"],"%Y-%m-%d")
         else:
             date=None
+
+        if max_age_years is not None:
+            if date is None or (datetime.now()-date).days/365.0>max_age_years:
+                continue
+            
         comps.append({
             "url":row["url"],
             "title":row["title"],
@@ -95,6 +107,7 @@ def load_comps(search_words,year_from=None,year_to=None,model=None):
             "is_manual":bool(row["is_manual"]),
             "gears":row["gears"],
             "engine":row["engine"],
+            "chassis":row["chassis"],
             "is_modified":bool(row["is_modified"]),
             "is_project":bool(row["is_project"]),
             "condition_grade":row["condition_grade"],
@@ -104,6 +117,19 @@ def load_comps(search_words,year_from=None,year_to=None,model=None):
             "recent_service":row["recent_service"],
             "flaw_count":count_flaws(row["notable_flaws"])
         })
+
+    #Keep only newest sale per chassis
+    newest={}
+    no_chassis=[]
+    for car in comps:
+        ch=car.get("chassis")
+        if not ch:
+            no_chassis.append(car)
+        elif ch not in newest:
+            newest[ch]=car
+        elif car.get("sale_date") and newest[ch].get("sale_date") and car["sale_date"]>newest[ch]["sale_date"]:
+            newest[ch]=car
+    comps=no_chassis+list(newest.values())
 
     return comps
 
@@ -133,22 +159,24 @@ def needs_enrichment(limit):
     con.close()
     return [row[0] for row in rows]
 
-def save_condition(url,features,model=None):
+def save_condition(url,features,model=None,description=None,chassis=None):
     #Get condition fields and mark enriched
+    if chassis:
+        chassis=chassis.strip().upper()
     con=sqlite3.connect(DB)
     con.execute("INSERT OR IGNORE INTO sales(url,enriched) VALUES(?,0)",(url,))
     flaws=json.dumps(features.get("notable_flaws",[]))
     con.execute("""UPDATE sales SET
                 condition_grade=?,matching_engine=?,matching_trans=?,
                 rust_mentioned=?, recent_service=?,notable_flaws=?,
-                model=?,enriched=1
+                model=?,description=?,chassis=?,enriched=1
                 WHERE url=?""",
                 (features.get("condition_grade"),
                 to_int_or_none(features.get("matching_engine")),
                 to_int_or_none(features.get("matching_trans")),
                 to_int_or_none(features.get("rust_mentioned")),
                 to_int_or_none(features.get("recent_service")),
-                flaws,model,url))
+                flaws,model,description,chassis,url))
     con.commit()
     con.close()
 

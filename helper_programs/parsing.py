@@ -108,6 +108,7 @@ def get_features(title,subtitle):
         "mileage":get_mileage(title),
         "engine":get_engine(title),
         "body":body,
+        "sold":"sold for" in subtitle.lower(),
         "is_manual":is_manual,
         "is_modified":"modified" in t,
         "is_project":"project" in t,

@@ -10,14 +10,18 @@ CACHE_DB="listing_cache.db"
 
 PROMPT="""You are extracting facts from a car auction description.
 Read the text and return ONLY a JSON object with these exact fields:
--condition_grade: one of "concours","excellent","driver","decent","project"
+-condition_grade: exactly one of "project","driver","excellent","concours"
+  "project": not running, or needs major mechanical or body work
+  "driver": runs and drives, honest wear, an ordinary used example
+  "excellent": genuinely outstanding example, only minor flaws mentioned
+  "concours": show quality, restored or kept to a very high standard
+  Most cars are "driver". Only use "excellent" or "concours" if the text
+  clearly supports it.
 -matching_engine: true or false (is the engine original)
 -matching_trans: true or false (is the transmission original)
 -rust_mentioned: true or false
 -recent_service: true or false (major service/rebuild since 2016)
 -notable_flaws: a list of short strings (empty list if none)
- 
-Return only the JSON, no other text.
  
 Description:
 {text}"""
@@ -49,7 +53,7 @@ def parse_condition(description):
         print(f" model gave bad output, skipping: {e}")
         return {}
     
-    allowed=["concours","excellent","driver","decent","project"]
+    allowed=["concours","excellent","driver","project"]
     if feats.get("condition_grade") not in allowed:
         feats.pop("condition_grade",None)
     return feats

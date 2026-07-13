@@ -11,26 +11,42 @@ def predict(cars, target_car=None):
     #Mileage is not required, as many car titles omit
     usable=[]
     for car in cars:
-        if car["price"] and car["year"] and car["sale_date"]:
+        if car.get("price") and car.get("year") and car.get("sale_date"):
             usable.append(car)
             
     if len(usable)<15:
         print("Not enough data points")
         return None
     
+    def usable_features(values):
+        known=[v for v in values if v is not None]
+        if len(known)<8:
+            return False
+        minority=min(sum(known),len(known)-sum(known))
+        if minority<8:
+            return False
+        if minority/len(known)<0.10:
+            return False
+        return True
     #Get each feature in a list
     #Center year and mileage near zero for model behaivor
 
     prices=[car["price"] for car in usable]
     years=np.array([car["year"] for car in usable],dtype=float)
+
+    #Log mileage
     mileages_raw=[car.get("mileage") for car in usable]
     known_mileage=[m for m in mileages_raw if m is not None]
     mileage_known_count=len(known_mileage)
     if mileage_known_count>0:
-        mileage_fill=sum(known_mileage)/mileage_known_count
+        log_mileage_fill=float(np.mean(np.log(known_mileage)))
+        median_mileage=float(np.median(known_mileage))
     else:
-        mileage_fill=0.0
-    mileages=np.array([m if m is not None else mileage_fill for m in mileages_raw], dtype=float)
+        log_mileage_fill=0.0
+        median_mileage=50000.0
+    log_mileage=np.array([np.log(m) if (m is not None and m>0) else log_mileage_fill for m in mileages_raw])
+    log_mileage_centered=log_mileage-log_mileage_fill
+
     dates=[car["sale_date"] for car in usable]
     manuals=np.array([1.0 if car["is_manual"] else 0.0 for car in usable])
     modifieds=np.array([1.0 if car["is_modified"] else 0.0 for car in usable])
@@ -48,7 +64,7 @@ def predict(cars, target_car=None):
     gears_centered=gears-gears_mean
 
     #Grades are scored 0-4
-    grade_map={"project":0,"driver":1,"decent":2,"excellent":3,"concours":4}
+    grade_map={"project":0,"driver":1,"excellent":2,"concours":3}
     cond_raw=[grade_map.get(car.get("condition_grade")) for car in usable]
     known_cond=[c for c in cond_raw if c is not None]
     cond_known_count=len(known_cond)
@@ -61,6 +77,7 @@ def predict(cars, target_car=None):
 
     #Matching engine
     match_eng_raw=[car.get("matching_engine") for car in usable]
+    match_eng_ok=usable_features(match_eng_raw)
     match_eng_known=[e for e in match_eng_raw if e is not None]
     match_eng_count=len(match_eng_known)
     if match_eng_count>0:
@@ -69,9 +86,12 @@ def predict(cars, target_car=None):
         match_eng_mean=0.0
     match_eng=np.array([e if e is not None else match_eng_mean for e in match_eng_raw],dtype=float)
     matching_eng_centered=match_eng-match_eng_mean
+    if not match_eng_ok:
+        matching_eng_centered=matching_eng_centered*0.0
 
     #Matching trans
     match_trans_raw=[car.get("matching_trans") for car in usable]
+    match_trans_ok=usable_features(match_trans_raw)
     match_trans_known=[t for t in match_trans_raw if t is not None]
     match_trans_count=len(match_trans_known)
     if match_trans_count>0:
@@ -80,6 +100,8 @@ def predict(cars, target_car=None):
         match_trans_mean=0.0
     match_trans=np.array([t if t is not None else match_trans_mean for t in match_trans_raw],dtype=float)
     matching_trans_centered=match_trans-match_trans_mean
+    if not match_trans_ok:
+        matching_trans_centered=matching_trans_centered*0.0
 
     #Flaw count
     flaw_raw=[car.get("flaw_count") for car in usable]
@@ -103,17 +125,14 @@ def predict(cars, target_car=None):
     #Make sale dates years since first sale to see market movement
     earliest=min(dates)
     sale_time=np.array([(d-earliest).days/365.0 for d in dates])
+    sale_time_mean=sale_time.mean()
+    sale_time_centered=sale_time-sale_time_mean
 
     #Avoid div by 0
     year_std=years.std()
     if year_std==0:
         year_std=1
-    mileage_std=mileages.std()
-    if mileage_std==0:
-        mileage_std=1
-
     year_scaled=(years-years.mean())/year_std
-    mileage_scaled=(mileages-mileages.mean())/mileage_std
 
     with pm.Model() as model:
         #Things model will learn
@@ -138,7 +157,7 @@ def predict(cars, target_car=None):
         #Model guess for car's log price
         guess=(intercept
                +b_year*year_scaled
-               +b_mileage*mileage_scaled
+               +b_mileage*log_mileage_centered
                +b_manual*manuals
                +b_gears*gears_centered
                +b_condition*condition_centered
@@ -151,10 +170,10 @@ def predict(cars, target_car=None):
                +b_targa*is_targa
                +b_sedan*is_sedan
                +b_roadster*is_roadster
-               +b_time*sale_time)
+               +b_time*sale_time_centered)
         
         #Learns from real prices
-        pm.Normal("observed",mu=guess,sigma=noise,observed=log_price)
+        pm.StudentT("observed",nu=4,mu=guess,sigma=noise,observed=log_price)
 
         trace=pm.sample(1000,tune=1000,chains=4,cores=1,progressbar=True,random_seed=1)
         
@@ -167,17 +186,19 @@ def predict(cars, target_car=None):
     def percent_effect(name,scale=1.0):
         middle=np.median(draws(name))
         return float(np.exp(middle*scale)-1)
+    
+    per_10k_scale=float(np.log((median_mileage+10000.0)/median_mileage))
 
     #What model predicts each feature is worth
     effects={
         #Standardize year and mileage to per 1 year newer, 10k miles more
         "per_year":percent_effect("b_year",1.0/year_std),
-        "per_10k_miles":percent_effect("b_mileage",10000/mileage_std) if mileage_known_count>=8 else None,
+        "per_10k_miles":percent_effect("b_mileage",per_10k_scale) if mileage_known_count>=8 else None,
         "manual":percent_effect("b_manual"),
         "per_gear":percent_effect("b_gears"),
         "per_condition_step":percent_effect("b_condition") if cond_known_count>=8 else None,
-        "matching_engine":percent_effect("b_matching_eng") if match_eng_count>=8 else None,
-        "matching_trans":percent_effect("b_matching_trans") if match_trans_count>=8 else None,
+        "matching_engine":percent_effect("b_matching_eng") if match_eng_ok else None,
+        "matching_trans":percent_effect("b_matching_trans") if match_trans_ok else None,
         "per_flaw":percent_effect("b_flaws") if flaw_known_count>=8 else None,
         "modified":percent_effect("b_modified"),
         "project":percent_effect("b_project"),
@@ -190,7 +211,8 @@ def predict(cars, target_car=None):
 
     if target_car is None:
         #If no target car, typical stock coupe 1 year from most recent sale
-        predicted_log=draws("intercept")+draws("b_time")*(sale_time.max()+1.0)
+        target_time=(sale_time.max()+1.0)-sale_time_mean
+        predicted_log=draws("intercept")+draws("b_time")*target_time
         describes="a typical stock coupe 1 year from latest sale"
 
     else:
@@ -200,8 +222,8 @@ def predict(cars, target_car=None):
         else:
             target_year=0.0
 
-        if target_car.get("mileage") is not None and mileage_known_count>=8:
-            target_mileage=(target_car["mileage"]-mileages.mean())/mileage_std
+        if target_car.get("mileage") and mileage_known_count>=8:
+            target_mileage=np.log(target_car["mileage"])-log_mileage_fill
         else:
             target_mileage=0.0
         
@@ -217,17 +239,17 @@ def predict(cars, target_car=None):
         else:
             target_condition=0.0
 
-        if target_car.get("matching_engine") is not None and match_eng_count>=8:
+        if target_car.get("matching_engine") is not None and match_eng_ok:
             target_engine_match=float(target_car.get("matching_engine"))-match_eng_mean
         else:
             target_engine_match=0.0
 
-        if target_car.get("matching_trans") is not None and match_trans_count>=8:
+        if target_car.get("matching_trans") is not None and match_trans_ok:
             target_trans_match=float(target_car.get("matching_trans"))-match_trans_mean
         else:
             target_trans_match=0.0
         
-        if target_car.get("flaw_count") is not None and match_trans_count>=8:
+        if target_car.get("flaw_count") is not None and flaw_known_count>=8:
             target_flaws=float(target_car.get("flaw_count"))-flaw_mean
         else:
             target_flaws=0.0
@@ -239,7 +261,7 @@ def predict(cars, target_car=None):
         target_sedan=1.0 if target_car.get("body")=="sedan" else 0.0
         target_roadster=1.0 if target_car.get("body")=="roadster" else 0.0
 
-        time_now=(datetime.now()-earliest).days/365.0
+        time_now=(datetime.now()-earliest).days/365.0-sale_time_mean
 
         predicted_log=(draws("intercept")
                        +draws("b_year")*target_year
@@ -261,10 +283,13 @@ def predict(cars, target_car=None):
 
     predicted_price=np.exp(predicted_log)
 
+    rng=np.random.default_rng(1)
+    could_sell_for=np.exp(predicted_log+rng.normal(size=predicted_log.shape)*draws("noise"))
+
     return{
         "predicted":int(np.median(predicted_price)),
-        "low":int(np.percentile(predicted_price,5)),
-        "high":int(np.percentile(predicted_price,95)),
+        "low":int(np.percentile(could_sell_for,5)),
+        "high":int(np.percentile(could_sell_for,95)),
         "count":len(usable),
         "effects":effects,
         "describes":describes,

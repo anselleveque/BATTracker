@@ -50,12 +50,37 @@ def get_comps(search,nonce,year,top_window=4,bottom_window=4):
             return history
     return history
 
+def show_nearest(history,target_car,how_many=5):
+    #Most similar sales
+    if target_car["mileage"] is None:
+        return
+    with_mileage=[car for car in history if car.get("mileage") and car.get("price")]
+    if not with_mileage:
+        return
+    def distance(car):
+        miles_gap=abs(car["mileage"]-target_car["mileage"])
+        year_gap=abs((car.get("year") or 0)-(target_car.get("year") or 0))
+        #Year apart counts like 2.5k miles4
+        return miles_gap+year_gap*2500
+    with_mileage.sort(key=distance)
+    print("\nClosest comps to this car: ")
+    for car in with_mileage[:how_many]:
+        date=car["sale_date"].strftime("%m/%Y") if car.get("sale_date") else "?"
+        print(f" ${car["price"]:>7,} {car["year"]} {car["mileage"]:>7,} mi {date} {car["title"][:38]}")
+
+
 def main():
     sales_db.setup()
 
     listing_url=input("URL of specific listing to price: ").strip()
     top_window_input=input("Year window + (blank for auto +4): ").strip()
-    bottom_window_input=input("Year window - (blank for auto -4): ")
+    bottom_window_input=input("Year window - (blank for auto -4): ").strip()
+    MAX_COMP_AGE=input("Maximum age of listings to compare to (blank for 5 y/o): ").strip()
+    
+    if MAX_COMP_AGE=="":
+        MAX_COMP_AGE=5
+    else:
+        MAX_COMP_AGE=int(MAX_COMP_AGE)
 
     if top_window_input=="":
         top_window=4
@@ -82,8 +107,10 @@ def main():
     if target_condition is None:
         target_condition={}
         if info.get("description"):
-            target_condition=llm_extract.parse_condition(info["description"])
-            sales_db.save_condition(listing_url,target_condition)
+            parsed=llm_extract.parse_condition(info["description"])
+            if parsed:
+                target_condition=parsed
+                sales_db.save_condition(listing_url,target_condition,info.get("model"),info["description"],details.get("chassis"))
 
     target_car={
                 "condition_grade":target_condition.get("condition_grade"),
@@ -132,12 +159,21 @@ def main():
     year=target_car["year"]
     search_words=search.lower().split()
     if year:
-        history=sales_db.load_comps(search_words,year-bottom_window,year+top_window,target_model)
+        history=sales_db.load_comps(search_words,year-bottom_window,year+top_window,target_model,max_age_years=MAX_COMP_AGE)
     else:
-        history=sales_db.load_comps(search_words,None,None,target_model)
+        history=sales_db.load_comps(search_words,None,None,target_model,max_age_years=MAX_COMP_AGE)
+
+    
+    if len(history)<15:
+        print(f"Few sales in last {MAX_COMP_AGE}, using all years")
+        if year:
+            history=sales_db.load_comps(search_words,year-bottom_window,year+top_window,target_model)
+        else:
+            history=sales_db.load_comps(search_words,None,None,target_model)
 
     if len(history)>3:
-        print(f"\nUsing {len(history)} comps from DB")
+        print(f"Using {len(history)} sales from db")
+        
     else:
         print(f"\nDB has too few/none for car, fetching live")
         print("\nRun build_database.py on this model to get condition info")
@@ -158,6 +194,7 @@ def main():
         if estimate["recent"] is not None:
             print(f" recent average (last 2 years): ${estimate["recent"]:,}")
         print(f" range: ${estimate["low"]:,} to ${estimate["high"]:,}")
+        show_nearest(history,target_car)
 
     print("\nRunning bayesian model")
     result=bayesian.predict(history,target_car)
@@ -172,7 +209,7 @@ def main():
 
     effects=result["effects"]
     print("\nWhat model learned: ")
-    print(f" each 10k miles more: {show_percent(effects["per_10k_miles"] if effects["per_10k_miles"] is not None else "No miles data")}")
+    print(f" each 10k miles more (at typical miles): {show_percent(effects["per_10k_miles"] if effects["per_10k_miles"] is not None else "No miles data")}")
     print(f" per year newer: {show_percent(effects["per_year"])}")
     print(f" per extra gear: {show_percent(effects["per_gear"])}")
     print(f" per condition step: {show_percent(effects["per_condition_step"] if effects["per_condition_step"] is not None else "No condition data")}")
