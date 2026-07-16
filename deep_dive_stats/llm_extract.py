@@ -11,18 +11,29 @@ CACHE_DB="listing_cache.db"
 PROMPT="""You are extracting facts from a car auction description.
 Read the text and return ONLY a JSON object with these exact fields:
 -condition_grade: exactly one of "project","driver","excellent","concours"
-  "project": not running, or needs major mechanical or body work
+  "project": the car currently does not run or drive, OR the text says it
+   NEEDS major mechanical or body work
   "driver": runs and drives, honest wear, an ordinary used example
   "excellent": genuinely outstanding example, only minor flaws mentioned
   "concours": show quality, restored or kept to a very high standard
-  Most cars are "driver". Only use "excellent" or "concours" if the text
-  clearly supports it.
+  RULES for condition_grade:
+  -Work that was ALREADY done (service, repairs, parts, restoration)
+   counts in the car's FAVOR. A long list of completed repairs does NOT
+   make a car a "project".
+  -Only grade "project" if the car does not run or drive now, or still
+   NEEDS major work. If it runs and drives, it is "driver" or better.
+  -Small flaws (trim, one window, paint chips, missing cupholder) belong
+   in notable_flaws and do NOT make a car a "project".
+   -Modifications do NOT make a car a "project", but they do decrease the grade if they are not tasteful or high quality
+  Most cars are "driver", but not all cars. Cars can be projects, excellent, and some are concours. Use your best judgment.
 -matching_engine: true or false (is the engine original)
 -matching_trans: true or false (is the transmission original)
 -rust_mentioned: true or false
 -recent_service: true or false (major service/rebuild since 2016)
 -notable_flaws: a list of short strings (empty list if none)
- 
+
+Return only the JSON, no other text.
+
 Description:
 {text}"""
 

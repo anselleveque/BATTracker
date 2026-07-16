@@ -206,6 +206,11 @@ def main():
     print(f" predicted: ${result["predicted"]:,}")
     print(f" 90% range: ${result["low"]:,} to ${result["high"]:,}")
     print(f" based on {result["count"]} sales")
+    if result.get("contributions"):
+        print(f"\nWhy this price: (starting from ${result["baseline"]:,}), the average comp): ")
+        for name,change in result["contributions"].items():
+            if abs(change)>=0.005:
+                print(f" {name}: {change*100:+.0f}%")
 
     effects=result["effects"]
     print("\nWhat model learned: ")

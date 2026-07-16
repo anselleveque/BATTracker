@@ -3,10 +3,11 @@
 #Adds or takes off of price based on features
 
 from datetime import datetime
+from unicodedata import name
 import numpy as np
 import pymc as pm
 
-def predict(cars, target_car=None):
+def predict(cars, target_car=None,as_of=None):
     #Only use cars that have every feature
     #Mileage is not required, as many car titles omit
     usable=[]
@@ -36,7 +37,7 @@ def predict(cars, target_car=None):
 
     #Log mileage
     mileages_raw=[car.get("mileage") for car in usable]
-    known_mileage=[m for m in mileages_raw if m is not None]
+    known_mileage=[m for m in mileages_raw if m is not None and m>0]
     mileage_known_count=len(known_mileage)
     if mileage_known_count>0:
         log_mileage_fill=float(np.mean(np.log(known_mileage)))
@@ -52,6 +53,18 @@ def predict(cars, target_car=None):
     modifieds=np.array([1.0 if car["is_modified"] else 0.0 for car in usable])
     projects=np.array([1.0 if car.get("is_project") else 0.0 for car in usable])
 
+    #Recent service
+    service_raw=[car.get("recent_service") for car in usable]
+    service_ok=usable_features(service_raw)
+    service_known=[s for s in service_raw if s is not None]
+    if len(service_known)>0:
+        service_mean=sum(service_known)/len(service_known)
+    else:
+        service_mean=0.0
+    service=np.array([s if s is not None else service_mean for s in service_raw],dtype=float)
+    service_centered=service-service_mean
+    if not service_ok:
+        service_centered=service_centered*0.0
     #Gear count from titles, cars that don't say dnt pull average
     gears_raw=[car.get("gears") for car in usable]
     known_gears=[g for g in gears_raw if g is not None]
@@ -142,6 +155,7 @@ def predict(cars, target_car=None):
         b_manual=pm.Normal("b_manual",mu=0,sigma=1)
         b_gears=pm.Normal("b_gears",mu=0,sigma=1)
         b_condition=pm.Normal("b_condition",mu=0,sigma=1)
+        b_service=pm.Normal("b_service",mu=0,sigma=1)
         b_matching_eng=pm.Normal("b_matching_eng",mu=0,sigma=1)
         b_matching_trans=pm.Normal("b_matching_trans",mu=0,sigma=1)
         b_flaws=pm.Normal("b_flaws",mu=0,sigma=1)
@@ -161,6 +175,7 @@ def predict(cars, target_car=None):
                +b_manual*manuals
                +b_gears*gears_centered
                +b_condition*condition_centered
+               +b_service*service_centered
                +b_matching_eng*matching_eng_centered
                +b_matching_trans*matching_trans_centered
                +b_flaws*flaws_centered
@@ -197,6 +212,7 @@ def predict(cars, target_car=None):
         "manual":percent_effect("b_manual"),
         "per_gear":percent_effect("b_gears"),
         "per_condition_step":percent_effect("b_condition") if cond_known_count>=8 else None,
+        "recent_service":percent_effect("b_service") if service_ok else None,
         "matching_engine":percent_effect("b_matching_eng") if match_eng_ok else None,
         "matching_trans":percent_effect("b_matching_trans") if match_trans_ok else None,
         "per_flaw":percent_effect("b_flaws") if flaw_known_count>=8 else None,
@@ -214,9 +230,12 @@ def predict(cars, target_car=None):
         target_time=(sale_time.max()+1.0)-sale_time_mean
         predicted_log=draws("intercept")+draws("b_time")*target_time
         describes="a typical stock coupe 1 year from latest sale"
+        contributions=None
+    
 
     else:
         #Specific car's value at today's date
+        
         if target_car.get("year"):
             target_year=(target_car["year"]-years.mean())/year_std
         else:
@@ -238,6 +257,11 @@ def predict(cars, target_car=None):
             target_condition=target_grade-cond_mean
         else:
             target_condition=0.0
+
+        if target_car.get("recent_service") is not None and service_ok:
+            target_service=float(car.get("recent_service"))-service_mean
+        else:
+            target_service=0.0
 
         if target_car.get("matching_engine") is not None and match_eng_ok:
             target_engine_match=float(target_car.get("matching_engine"))-match_eng_mean
@@ -261,14 +285,18 @@ def predict(cars, target_car=None):
         target_sedan=1.0 if target_car.get("body")=="sedan" else 0.0
         target_roadster=1.0 if target_car.get("body")=="roadster" else 0.0
 
-        time_now=(datetime.now()-earliest).days/365.0-sale_time_mean
-
+        if as_of is not None:
+            when=as_of
+        else:
+            when=datetime.now()
+        time_now=(when-earliest).days/365.0-sale_time_mean
         predicted_log=(draws("intercept")
                        +draws("b_year")*target_year
                        +draws("b_mileage")*target_mileage
                        +draws("b_manual")*target_manual
                        +draws("b_gears")*target_gears
                        +draws("b_condition")*target_condition
+                       +draws("b_service")*target_service
                        +draws("b_matching_eng")*target_engine_match
                        +draws("b_matching_trans")*target_trans_match
                        +draws("b_flaws")*target_flaws
@@ -281,10 +309,28 @@ def predict(cars, target_car=None):
                        +draws("b_time")*time_now)
         describes="this specific car at today's date"
 
+        def contrib(name,value):
+            return float(np.exp(np.median(draws(name))*value)-1)
+        contributions={
+        "year": contrib("b_year",target_year),
+        "mileage": contrib("b_mileage",target_mileage),
+        "manual": contrib("b_manual",target_manual),
+        "gears": contrib("b_gears",target_gears),
+        "condition": contrib("b_condition",target_condition),
+        "recent_service": contrib("b_service",target_service),
+        "matching_engine": contrib("b_matching_eng",target_engine_match),
+        "matching_trans": contrib("b_matching_trans",target_trans_match),
+        "flaws": contrib("b_flaws",target_flaws),
+        "modified": contrib("b_modified",target_modified),
+        "project": contrib("b_project",target_project),
+        "market_time": contrib("b_time",time_now),
+        }
+
     predicted_price=np.exp(predicted_log)
 
     rng=np.random.default_rng(1)
-    could_sell_for=np.exp(predicted_log+rng.normal(size=predicted_log.shape)*draws("noise"))
+    tail_draws=rng.standard_t(df=4,size=predicted_log.shape)
+    could_sell_for=np.exp(predicted_log+tail_draws*draws("noise"))
 
     return{
         "predicted":int(np.median(predicted_price)),
@@ -293,6 +339,8 @@ def predict(cars, target_car=None):
         "count":len(usable),
         "effects":effects,
         "describes":describes,
+        "baseline":int(np.exp(np.median(draws("intercept")))),
+        "contributions":contributions,
     }
 
 

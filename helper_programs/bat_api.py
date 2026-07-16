@@ -125,13 +125,13 @@ def get_listing_details(url):
     with sync_playwright() as p:
         
             browser=p.chromium.launch(
-                headless=False,
+                headless=True,
                 channel="chrome",
                 args=["--disable-blink-features=AutomationControlled"],
             )
             context=browser.new_context(
                 user_agent=bat_config.BROWSER_USER_AGENT,
-                viewport={"width":1200,"height":800},
+                viewport={"width":500,"height":300},
             )
             context.add_init_script(
                 "Object.defineProperty(navigator,'webdriver', {get:()=>undefined})"
