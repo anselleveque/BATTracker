@@ -49,9 +49,17 @@ def predict(cars, target_car=None,as_of=None):
     log_mileage_centered=log_mileage-log_mileage_fill
 
     dates=[car["sale_date"] for car in usable]
-    manuals=np.array([1.0 if car["is_manual"] else 0.0 for car in usable])
     modifieds=np.array([1.0 if car["is_modified"] else 0.0 for car in usable])
     projects=np.array([1.0 if car.get("is_project") else 0.0 for car in usable])
+
+    #Manual filter
+    manual_raw=[1 if car.get("is_manual") else 0 for car in usable]
+    manual_ok=usable_features(manual_raw)
+    manuals=np.array(manual_raw,dtype=float)
+    manuals_mean=manuals.mean()
+    manuals_centered=manuals-manuals_mean
+    if not manual_ok:
+        manuals_centered=manuals_centered*0.0
 
     #Recent service
     service_raw=[car.get("recent_service") for car in usable]
@@ -76,6 +84,21 @@ def predict(cars, target_car=None,as_of=None):
     #Per extra gear
     gears_centered=gears-gears_mean
 
+    colors_raw=[(car.get("color") or "").lower() for car in usable]
+    from collections import Counter
+    counts=Counter(c for c in colors_raw if c)
+    #only top colors with >=15 examples get coefficient
+    top_colors=[c for c,n in counts.most_common(4) if n>=15]
+    color_arrays={}
+    color_ok={}
+    for c in top_colors:
+        raw=[1 if x==c else 0 for x in colors_raw]
+        color_ok[c]=usable_features(raw)
+        arr=np.array(raw,dtype=float)
+        if not color_ok[c]:
+            arr=arr*0.0
+        color_arrays[c]=arr
+        
     #Grades are scored 0-4
     grade_map={"project":0,"driver":1,"excellent":2,"concours":3}
     cond_raw=[grade_map.get(car.get("condition_grade")) for car in usable]
@@ -102,7 +125,9 @@ def predict(cars, target_car=None,as_of=None):
     if not match_eng_ok:
         matching_eng_centered=matching_eng_centered*0.0
 
-    #Matching trans
+    """
+    #Trying w/o 
+    # #Matching trans
     match_trans_raw=[car.get("matching_trans") for car in usable]
     match_trans_ok=usable_features(match_trans_raw)
     match_trans_known=[t for t in match_trans_raw if t is not None]
@@ -114,7 +139,7 @@ def predict(cars, target_car=None,as_of=None):
     match_trans=np.array([t if t is not None else match_trans_mean for t in match_trans_raw],dtype=float)
     matching_trans_centered=match_trans-match_trans_mean
     if not match_trans_ok:
-        matching_trans_centered=matching_trans_centered*0.0
+        matching_trans_centered=matching_trans_centered*0.0"""
 
     #Flaw count
     flaw_raw=[car.get("flaw_count") for car in usable]
@@ -154,10 +179,18 @@ def predict(cars, target_car=None,as_of=None):
         b_mileage=pm.Normal("b_mileage",mu=0,sigma=1)
         b_manual=pm.Normal("b_manual",mu=0,sigma=1)
         b_gears=pm.Normal("b_gears",mu=0,sigma=1)
+
+        b_colors={}
+        for c in top_colors:
+            b_colors[c]=pm.Normal(f"b_color_{c.replace(' ','_')}",mu=0,sigma=1)
+        color_term=0
+        for c in top_colors:
+            color_term=color_term+b_colors[c]*color_arrays[c]
+
         b_condition=pm.Normal("b_condition",mu=0,sigma=1)
         b_service=pm.Normal("b_service",mu=0,sigma=1)
         b_matching_eng=pm.Normal("b_matching_eng",mu=0,sigma=1)
-        b_matching_trans=pm.Normal("b_matching_trans",mu=0,sigma=1)
+        #b_matching_trans=pm.Normal("b_matching_trans",mu=0,sigma=1)
         b_flaws=pm.Normal("b_flaws",mu=0,sigma=1)
         b_modified=pm.Normal("b_modified",mu=0,sigma=1)
         b_project=pm.Normal("b_project",mu=0,sigma=1)
@@ -172,12 +205,13 @@ def predict(cars, target_car=None,as_of=None):
         guess=(intercept
                +b_year*year_scaled
                +b_mileage*log_mileage_centered
-               +b_manual*manuals
+               +b_manual*manuals_centered
                +b_gears*gears_centered
+               +color_term
                +b_condition*condition_centered
                +b_service*service_centered
                +b_matching_eng*matching_eng_centered
-               +b_matching_trans*matching_trans_centered
+               #+b_matching_trans*matching_trans_centered
                +b_flaws*flaws_centered
                +b_modified*modifieds
                +b_project*projects
@@ -209,12 +243,12 @@ def predict(cars, target_car=None,as_of=None):
         #Standardize year and mileage to per 1 year newer, 10k miles more
         "per_year":percent_effect("b_year",1.0/year_std),
         "per_10k_miles":percent_effect("b_mileage",per_10k_scale) if mileage_known_count>=8 else None,
-        "manual":percent_effect("b_manual"),
+        "manual":percent_effect("b_manual") if manual_ok else None,
         "per_gear":percent_effect("b_gears"),
         "per_condition_step":percent_effect("b_condition") if cond_known_count>=8 else None,
         "recent_service":percent_effect("b_service") if service_ok else None,
         "matching_engine":percent_effect("b_matching_eng") if match_eng_ok else None,
-        "matching_trans":percent_effect("b_matching_trans") if match_trans_ok else None,
+        #"matching_trans":percent_effect("b_matching_trans") if match_trans_ok else None,
         "per_flaw":percent_effect("b_flaws") if flaw_known_count>=8 else None,
         "modified":percent_effect("b_modified"),
         "project":percent_effect("b_project"),
@@ -224,6 +258,10 @@ def predict(cars, target_car=None,as_of=None):
         "roadster_vs_coupe":percent_effect("b_roadster"),
         "market_per_year":percent_effect("b_time")
     }
+
+    #Enter colors that got through var guard
+    for c in top_colors:
+        effects[f"color_{c}"]=percent_effect(f"b_color_{c.replace(' ','_')}") if color_ok[c] else None
 
     if target_car is None:
         #If no target car, typical stock coupe 1 year from most recent sale
@@ -245,12 +283,21 @@ def predict(cars, target_car=None,as_of=None):
             target_mileage=np.log(target_car["mileage"])-log_mileage_fill
         else:
             target_mileage=0.0
-        
-        target_manual=1.0 if target_car.get("is_manual") else 0.0
+        if manual_ok:
+            target_manual=(1.0 if target_car.get("is_manual") else 0.0)-manuals_mean
+        else: 
+            target_manual=0.0
+            
         if target_car.get("gears") is not None:
             target_gears=target_car["gears"]-gears_mean
         else:
             target_gears=0.0
+
+        target_color=(target_car.get("color") or "")
+        color_predicted=0.0
+        for c in top_colors:
+            if target_color==c and color_ok[c]:
+                color_predicted=color_predicted+draws(f"b_color_{c.replace(' ','_')}")
 
         target_grade=grade_map.get(target_car.get("condition_grade"))
         if target_grade is not None and cond_known_count>=8:
@@ -259,7 +306,7 @@ def predict(cars, target_car=None,as_of=None):
             target_condition=0.0
 
         if target_car.get("recent_service") is not None and service_ok:
-            target_service=float(car.get("recent_service"))-service_mean
+            target_service=float(target_car.get("recent_service"))-service_mean
         else:
             target_service=0.0
 
@@ -268,10 +315,10 @@ def predict(cars, target_car=None,as_of=None):
         else:
             target_engine_match=0.0
 
-        if target_car.get("matching_trans") is not None and match_trans_ok:
-            target_trans_match=float(target_car.get("matching_trans"))-match_trans_mean
-        else:
-            target_trans_match=0.0
+        #if target_car.get("matching_trans") is not None and match_trans_ok:
+            #target_trans_match=float(target_car.get("matching_trans"))-match_trans_mean
+        #else:
+            #target_trans_match=0.0
         
         if target_car.get("flaw_count") is not None and flaw_known_count>=8:
             target_flaws=float(target_car.get("flaw_count"))-flaw_mean
@@ -295,10 +342,11 @@ def predict(cars, target_car=None,as_of=None):
                        +draws("b_mileage")*target_mileage
                        +draws("b_manual")*target_manual
                        +draws("b_gears")*target_gears
+                       +color_predicted
                        +draws("b_condition")*target_condition
                        +draws("b_service")*target_service
                        +draws("b_matching_eng")*target_engine_match
-                       +draws("b_matching_trans")*target_trans_match
+                       #+draws("b_matching_trans")*target_trans_match
                        +draws("b_flaws")*target_flaws
                        +draws("b_modified")*target_modified
                        +draws("b_project")*target_project
@@ -319,12 +367,16 @@ def predict(cars, target_car=None,as_of=None):
         "condition": contrib("b_condition",target_condition),
         "recent_service": contrib("b_service",target_service),
         "matching_engine": contrib("b_matching_eng",target_engine_match),
-        "matching_trans": contrib("b_matching_trans",target_trans_match),
+        #"matching_trans": contrib("b_matching_trans",target_trans_match),
         "flaws": contrib("b_flaws",target_flaws),
         "modified": contrib("b_modified",target_modified),
         "project": contrib("b_project",target_project),
         "market_time": contrib("b_time",time_now),
         }
+
+    for c in top_colors:
+            if target_color==c and color_ok[c]:
+                contributions[f"color_{c}"]=contrib(f"b_color_{c.replace(' ','_')}", 1.0)
 
     predicted_price=np.exp(predicted_log)
 

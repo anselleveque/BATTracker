@@ -118,13 +118,14 @@ def main():
                 "mileage":details.get("mileage",from_title["mileage"]),
                 "is_manual":details.get("is_manual",from_title["is_manual"]),
                 "gears":from_title["gears"],
+                "color":details.get("color"),
                 "is_modified":from_title["is_modified"],
                 "is_project":from_title["is_project"],
                 "body":from_title["body"],
                 "engine":from_title["engine"],
                 "condition_grade":target_condition.get("condition_grade"),
                 "matching_engine":target_condition.get("matching_engine"),
-                "matching_trans":target_condition.get("matching_trans"),
+                #"matching_trans":target_condition.get("matching_trans"),
                 "flaw_count":count_flaws(target_condition),
             }
     
@@ -217,9 +218,10 @@ def main():
     print(f" each 10k miles more (at typical miles): {show_percent(effects["per_10k_miles"] if effects["per_10k_miles"] is not None else "No miles data")}")
     print(f" per year newer: {show_percent(effects["per_year"])}")
     print(f" per extra gear: {show_percent(effects["per_gear"])}")
+    print(f" each color: {show_percent(effects["color"])}")
     print(f" per condition step: {show_percent(effects["per_condition_step"] if effects["per_condition_step"] is not None else "No condition data")}")
     print(f" matching engine: {show_percent(effects["matching_engine"] if effects["matching_engine"] is not None else "No matching engine data")}")
-    print(f" matching trans: {show_percent(effects["matching_trans"] if effects["matching_trans"] is not None else "No matching trans data")}")
+    #print(f" matching trans: {show_percent(effects["matching_trans"] if effects["matching_trans"] is not None else "No matching trans data")}")
     print(f" per flaw noted: {show_percent(effects["per_flaw"] if effects["per_flaw"] is not None else "No flaw data")}")
     print(f" manual gearbox: {show_percent(effects["manual"])}")
     print(f" modified: {show_percent(effects["modified"])}")
