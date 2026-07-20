@@ -25,7 +25,9 @@ def setup():
                 model TEXT,
                 sold INTEGER,
                 description TEXT,
+                details TEXT,
                 chassis TEXT,
+                color TEXT,
                 is_modified INTEGER,
                 is_project INTEGER,
                 condition_grade TEXT,
@@ -106,6 +108,7 @@ def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years
             "body":row["body"],
             "is_manual":bool(row["is_manual"]),
             "gears":row["gears"],
+            "color":row["color"],
             "engine":row["engine"],
             "chassis":row["chassis"],
             "is_modified":bool(row["is_modified"]),
@@ -159,7 +162,7 @@ def needs_enrichment(limit):
     con.close()
     return [row[0] for row in rows]
 
-def save_condition(url,features,model=None,description=None,chassis=None):
+def save_condition(url,features,model=None,description=None,chassis=None,details=None):
     #Get condition fields and mark enriched
     if chassis:
         chassis=chassis.strip().upper()
@@ -169,14 +172,14 @@ def save_condition(url,features,model=None,description=None,chassis=None):
     con.execute("""UPDATE sales SET
                 condition_grade=?,matching_engine=?,matching_trans=?,
                 rust_mentioned=?, recent_service=?,notable_flaws=?,
-                model=?,description=?,chassis=?,enriched=1
+                model=?,description=?,chassis=?, details=?, enriched=1
                 WHERE url=?""",
                 (features.get("condition_grade"),
                 to_int_or_none(features.get("matching_engine")),
                 to_int_or_none(features.get("matching_trans")),
                 to_int_or_none(features.get("rust_mentioned")),
                 to_int_or_none(features.get("recent_service")),
-                flaws,model,description,chassis,url))
+                flaws,model,description,chassis,details,url))
     con.commit()
     con.close()
 

@@ -48,13 +48,13 @@ def build(search,year_from=None,year_to=None):
                 chassis=None
                 if info.get("details"):
                     chassis=parsing.parse_details(info["details"]).get("chassis")
-                sales_db.save_condition(url,feats,info.get("model"),info["description"],chassis)
+                sales_db.save_condition(url,feats,info.get("model"),info["description"],chassis,info.get("details"))
                 done+=1
             else:
                 print(" parse failed, retrying next run")
                 failed+=1
         elif info:
-            sales_db.save_condition(url,{},info.get("model"),"",None)
+            sales_db.save_condition(url,{},info.get("model"),"",None,info.get("details"))
             done+=1
         else:
             print(" page returned nothing, retrying next run")

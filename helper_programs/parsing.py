@@ -5,6 +5,155 @@
 import re
 from datetime import datetime
 
+INTERIOR_WORDS=("leather","upholstery","vinyl","cloth","nappa","alcantara",
+                "suede","trim","carpet","interior","dash")
+FINISH_WORDS=("metallic","metalic","mica","pearl","pearlescent","effect","paint")
+COLOR_STOP_WORDS=("and","with","the","a","an","its","their","which","that")
+
+MILEAGE_PROSE=[
+ r"(?:shows|showing|indicates|indicating|displays|displaying|reads|reflects)\s+(?:approximately\s+|about\s+|around\s+|roughly\s+|just\s+under\s+|just\s+over\s+|fewer\s+than\s+|under\s+|over\s+)?([\d]{1,3}(?:,\d{3})+|\d+k)\s+miles",
+ r"([\d]{1,3}(?:,\d{3})+|\d+k)\s+miles\s+(?:are\s+|is\s+)?(?:shown|indicated|displayed)",
+]
+KM_TO_MILES=0.621371
+KM_PROSE=[
+ r"(?:shows|showing|indicates|indicating|displays|displaying|reads|reflects)\s+(?:approximately\s+|about\s+|around\s+|roughly\s+|just\s+under\s+|just\s+over\s+|fewer\s+than\s+|under\s+|over\s+)?([\d]{1,3}(?:,\d{3})+|\d+k)\s+(?:kilometers|kilometres|km)\b",
+ r"([\d]{1,3}(?:,\d{3})+|\d+k)\s+(?:kilometers|kilometres|km)\s+(?:are\s+|is\s+)?(?:shown|indicated|displayed)",
+]
+KM_DETAILS=r"([\d][\d,]*k?)\s*(?:kilometers|kilometres|km)\b"
+COLOR_PROSE=[
+ r"finished in (?:paint-to-sample |pts )?([a-z][a-z\- ]{2,28}?) over ",
+ r"(?:is |was |been )(?:re)?(?:finished|painted|repainted) in (?:paint-to-sample |pts )?([a-z][a-z\- ]{2,28}?)[\.,]",
+]
+
+
+def clean_color(color):
+    if not color:
+        return None
+    out=str(color).lower().strip()
+    out=out.replace("gray","grey")
+    words=[w for w in out.split() if w not in COLOR_STOP_WORDS and w not in FINISH_WORDS]
+    while words and words[-1] in ("ii","iii","iv"):\
+        words.pop()
+    if not words or any(w in INTERIOR_WORDS for w in words):
+        return None
+    out=" ".join(words)
+    if 3<=len(out)<=28:
+        return out
+    return None
+
+def color_from_description(text):
+    if not text:
+        return None
+    low=text.lower()
+    for pattern in COLOR_PROSE:
+        for found in re.finditer(pattern,low):
+            out=clean_color(found.group(1))
+            if out is not None:
+                return out
+    return None
+
+def color_from(details_text,description):
+    if details_text:
+        try:
+            found=clean_color(parse_details(details_text).get("color"))
+        except Exception as e:
+            print(f"Exception: {e}")
+        if found is not None:
+            return found
+    description_found=color_from_description(description)
+    if description_found:
+        return description_found
+    else:
+        return f"Could not find color"
+
+def real_mileage(value):
+    if value is None:
+        return None
+    try:
+        value=int(value)
+    except(TypeError,ValueError) as e:
+        print(f"{e} error")
+        return None
+    if 1<=value<=999999:
+        return value
+    return None
+
+def number_from(raw):
+    raw=raw.lower().replace(",","")
+    if raw.endswith("k"):
+        return int(raw[:-1]*1000)
+    return int(raw)
+
+def km_to_miles(km):
+    return int(round(km*KM_TO_MILES))
+
+def mileage_from_km(details_text,description):
+    if details_text:
+        for line in details_text.split("\n"):
+            low=line.lower().strip()
+            if "shown" not in low and "indicated" not in low:
+                continue
+            found=re.search(KM_DETAILS,low)
+            if found:
+                miles=real_mileage(km_to_miles(number_from(found.group(1))))
+                if miles is not None:
+                    return miles
+    if description:
+        low=description.lower()
+        for pattern in KM_PROSE:
+            found=re.search(pattern,low)
+            if found:
+                return real_mileage(km_to_miles(number_from(found.group(1))))
+    return None
+
+def mileage_from_description(text):
+    if not text:
+        return None
+    low=text.lower()
+    for pattern in MILEAGE_PROSE:
+        found=re.search(pattern,low)
+        if found:
+            return real_mileage(number_from(found.group(1)))
+    return None
+           
+def mileage_from(details_text,description):
+    if details_text:
+        try:
+            found=real_mileage(parse_details(details_text).get("mileage"))
+        except Exception as e:
+            found=None
+            print(f"Exception: {e}")
+        if found is not None:
+            return found
+    found=mileage_from_description(description)
+    if found is not None:
+        return found
+    km_found=mileage_from_km(details_text,description)
+    if km_found is not None:
+        return km_found
+    else:
+        return f"Could not find mileage"
+    
+def variants(title):
+    TITLE_NOISE=("no","reserve","mile","miles","owner","one","single","family",
+             "year","years","owned","modified","project","restored","original","k")
+    #Find different trims from title, e.g in BMW E9, 2800,3.0csi, 3.0csl all in same model but diff cars\
+    if is_car(title):
+        t=(title or "").lower()
+        t.replace()
+        t=re.sub(r"\b(19|20)\d{2}\b"," ",t)
+        t=re.sub(r"\b[\d,]+k?[- ]?miles?\b"," ",t)
+        t=re.sub(r"\b[\d,]+k?[- ]?(?:kilometers|kilometres|km)\b"," ",t)
+        t=re.sub(r"[^a-z0-9.]+"," ",t)
+        out=set()
+        for w in t.split():
+            if w in TITLE_NOISE or len(w)<2:
+                continue
+            out.add(w)
+        return out
+
+
+
 def get_price(subtitle):
     found=re.search(r'\$([0-9,]+)', subtitle)
     if found:

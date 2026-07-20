@@ -88,7 +88,7 @@ def predict(cars, target_car=None,as_of=None):
     from collections import Counter
     counts=Counter(c for c in colors_raw if c)
     #only top colors with >=15 examples get coefficient
-    top_colors=[c for c,n in counts.most_common(4) if n>=15]
+    top_colors=[c for c,n in counts.most_common(6) if n>=15]
     color_arrays={}
     color_ok={}
     for c in top_colors:
@@ -287,13 +287,13 @@ def predict(cars, target_car=None,as_of=None):
             target_manual=(1.0 if target_car.get("is_manual") else 0.0)-manuals_mean
         else: 
             target_manual=0.0
-            
+
         if target_car.get("gears") is not None:
             target_gears=target_car["gears"]-gears_mean
         else:
             target_gears=0.0
 
-        target_color=(target_car.get("color") or "")
+        target_color=(target_car.get("color") or "").lower()
         color_predicted=0.0
         for c in top_colors:
             if target_color==c and color_ok[c]:
@@ -374,7 +374,7 @@ def predict(cars, target_car=None,as_of=None):
         "market_time": contrib("b_time",time_now),
         }
 
-    for c in top_colors:
+        for c in top_colors:
             if target_color==c and color_ok[c]:
                 contributions[f"color_{c}"]=contrib(f"b_color_{c.replace(' ','_')}", 1.0)
 

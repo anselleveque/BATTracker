@@ -110,7 +110,7 @@ def main():
             parsed=llm_extract.parse_condition(info["description"])
             if parsed:
                 target_condition=parsed
-                sales_db.save_condition(listing_url,target_condition,info.get("model"),info["description"],details.get("chassis"))
+                sales_db.save_condition(listing_url,target_condition,info.get("model"),info["description"],details.get("chassis"),info.get("details"))
 
     target_car={
                 "condition_grade":target_condition.get("condition_grade"),
@@ -218,7 +218,11 @@ def main():
     print(f" each 10k miles more (at typical miles): {show_percent(effects["per_10k_miles"] if effects["per_10k_miles"] is not None else "No miles data")}")
     print(f" per year newer: {show_percent(effects["per_year"])}")
     print(f" per extra gear: {show_percent(effects["per_gear"])}")
-    print(f" each color: {show_percent(effects["color"])}")
+
+    for key,value in effects.items():
+        if key.startswith("color_"):
+            print(f" {key[6:]}: {show_percent(value)}")
+
     print(f" per condition step: {show_percent(effects["per_condition_step"] if effects["per_condition_step"] is not None else "No condition data")}")
     print(f" matching engine: {show_percent(effects["matching_engine"] if effects["matching_engine"] is not None else "No matching engine data")}")
     #print(f" matching trans: {show_percent(effects["matching_trans"] if effects["matching_trans"] is not None else "No matching trans data")}")
