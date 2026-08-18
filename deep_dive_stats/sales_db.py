@@ -4,6 +4,8 @@
 
 import sqlite3
 import json
+import helper_programs.parsing as parsing
+import re
 
 DB="sales.db"
 
@@ -36,6 +38,9 @@ def setup():
                 rust_mentioned INTEGER,
                 recent_service INTEGER,
                 notable_flaws TEXT,
+                condition_score INTEGER,
+                major_flaws TEXT,
+                minor_flaws TEXT,
                 enriched INTEGER DEFAULT 0
             )""")
     con.commit()
@@ -60,7 +65,7 @@ def save_comps(cars):
     con.commit()
     con.close()
 
-def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years=None):
+def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years=None,exclude_words=None):
     #Read matching sales from databse
     con=sqlite3.connect(DB)
     con.row_factory=sqlite3.Row
@@ -74,8 +79,13 @@ def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years
         if row["sold"] is not None and row["sold"]==0:
             continue
 
-        if model is not None and row["model"] is not None:
-            if row["model"].lower()!=model.lower():
+        #Drop titles containing excluded phrases
+        if exclude_words:
+            title=(row["title"] or "").lower()
+            if any(re.search(r"\b"+re.escape(word)+r"\b",title) for word in exclude_words):
+                continue
+        if model is not None:
+            if row["model"] is None or row["model"].lower()!=model.lower():
                 continue
         else:
             title=(row["title"] or "").lower()
@@ -118,7 +128,10 @@ def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years
             "matching_trans":row["matching_trans"],
             "rust_mentioned":row["rust_mentioned"],
             "recent_service":row["recent_service"],
-            "flaw_count":count_flaws(row["notable_flaws"])
+            "condition_score":row["condition_score"],
+            "flaw_count":count_flaws(row["notable_flaws"]),
+            "major_flaw_count":count_flaws(row["major_flaws"]),
+            "minor_flaw_count":count_flaws(row["minor_flaws"]),
         })
 
     #Keep only newest sale per chassis
@@ -151,7 +164,10 @@ def get_condition(url):
         "matching_trans":row["matching_trans"],
         "rust_mentioned":row["rust_mentioned"],
         "recent_service":row["recent_service"],
+        "condition_score":row["condition_score"],
         "flaw_count":count_flaws(row["notable_flaws"]),
+        "major_flaw_count":count_flaws(row["major_flaws"]),
+        "minor_flaw_count":count_flaws(row["minor_flaws"]),
         "model":row["model"],
     }
 
@@ -166,20 +182,30 @@ def save_condition(url,features,model=None,description=None,chassis=None,details
     #Get condition fields and mark enriched
     if chassis:
         chassis=chassis.strip().upper()
+    miles=parsing.mileage_from(details,description)
+    color=parsing.color_from(details,description)
+
     con=sqlite3.connect(DB)
     con.execute("INSERT OR IGNORE INTO sales(url,enriched) VALUES(?,0)",(url,))
-    flaws=json.dumps(features.get("notable_flaws",[]))
+    major=features.get("major_flaws",[])
+    minor=features.get("minor_flaws",[])
+    flaws=json.dumps(major+minor)
+    major_text=json.dumps(major)
+    minor_text=json.dumps(minor)
     con.execute("""UPDATE sales SET
                 condition_grade=?,matching_engine=?,matching_trans=?,
-                rust_mentioned=?, recent_service=?,notable_flaws=?,
-                model=?,description=?,chassis=?, details=?, enriched=1
+                rust_mentioned=?,recent_service=?,notable_flaws=?,
+                condition_score=?,major_flaws=?,minor_flaws=?,
+                model=?,description=?,chassis=?,details=?,
+                mileage=COALESCE(mileage,?),color=COALESCE(color,?),enriched=1
                 WHERE url=?""",
                 (features.get("condition_grade"),
                 to_int_or_none(features.get("matching_engine")),
                 to_int_or_none(features.get("matching_trans")),
                 to_int_or_none(features.get("rust_mentioned")),
                 to_int_or_none(features.get("recent_service")),
-                flaws,model,description,chassis,details,url))
+                flaws,features.get("condition_score"),major_text,minor_text,
+                model,description,chassis,details,miles,color,url))
     con.commit()
     con.close()
 

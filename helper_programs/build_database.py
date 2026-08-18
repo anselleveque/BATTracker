@@ -7,6 +7,7 @@ import helper_programs.parsing as parsing
 import deep_dive_stats.sales_db as sales_db
 import deep_dive_stats.llm_extract as llm_extract
 
+
 #Secs to wait between browser laods
 DELAY=1
 
@@ -18,6 +19,14 @@ def build(search,year_from=None,year_to=None):
 
     print(f"Fetching all sales for '{search}'")
     history=bat_api.get_sale_history(search,nonce,year_from,year_to,max_pages=100)
+
+    #Skip other titles
+    skip=input("Skip titles containing (comma separated, blank for none): ")
+    if skip:
+        bad=[w.strip().lower() for w in skip.split(",") if w.strip()]
+        before=len(history)
+        history=[c for c in history if not any(w in (c.get("title") or "").lower() for w in bad)]
+        print(f"dropped {before-len(history)} listings matching {bad}")
     print(f"Found {len(history)} sales. Saving basics first")
     sales_db.save_comps(history)
 
@@ -91,15 +100,24 @@ def build_many(searches):
 
 def main():
     print("Models to load, one line at a time (ex Porsche 911 GT3)")
-    print("Press enter on blank line to end model list\n")
+    print("Press enter on blank line to end model list")
+    print("To input a file, type file\n")
 
     searches=[]
     while True:
         line=input("Model (or blank to start): ").strip()
         if line=="":
             break
-        searches.append(line)
-    
+        elif line=="file":
+            file=input("Input file name, including extension: ")
+            with open(file,"r") as f:
+                lines=f.readlines()
+            cleaned_lines=[line.strip() for line in lines]
+            for l in cleaned_lines:
+                searches.append(l)
+        else:
+            searches.append(line)
+
     if not searches:
         print("No models entered")
         return

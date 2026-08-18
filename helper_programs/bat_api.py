@@ -36,7 +36,7 @@ def get_sale_history(search,nonce,year_from=None,year_to=None,max_pages=5):
             "page":page,
             "s":search,
             "results":"items"
-        }, timeout=15)
+        }, timeout=60)
         if response.status_code!=200:
             print("  got status", response.status_code, "- stopping")
             break
