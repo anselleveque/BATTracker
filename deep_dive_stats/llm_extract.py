@@ -3,6 +3,13 @@
 
 import requests
 import json
+import os
+import anthropic
+
+#When wanted, can use anthropic architecture instead of ollama
+#Put "api" for anthropic (usage credits) and "ollama" for ollama
+BACKEND="api"
+API_MODEL="claude-haiku-4-5-20251001"
 
 OLLAMA_URL="http://localhost:11434/api/generate"
 MODEL="gpt-oss:20b"
@@ -15,7 +22,9 @@ Read the text and return ONLY a JSON object with these exact fields:
    NEEDS major mechanical or body work
   "driver": runs and drives, honest wear, an ordinary used example
   "excellent": genuinely outstanding example, only minor flaws mentioned
-  "concours": show quality, restored or kept to a very high standard
+  "concours": exceptional - a high-quality restoration, an outstandingly
+   preserved original, or a car kept to show standard. Does not require
+   that the description mention shows or judging.
   RULES for condition_grade:
   -Work that was ALREADY done (service, repairs, parts, restoration)
    counts in the car's FAVOR. A long list of completed repairs does NOT
@@ -45,20 +54,29 @@ Read the text and return ONLY a JSON object with these exact fields:
  the description says nothing at all about the body or paint. 
  If it mentions repaired rust, it will be false. Do not count historical rust against the car.
 -major_flaws: a list of short strings for problems that would meaningfully
- affect value - rust, accident damage, mechanical faults, non-running
- systems, failed paint
+ reduce what a buyer pays - current rust, accident damage, mechanical faults,
+ non-running systems, failed or poor-quality paint, missing major components.
+ Judge severity against a car in this condition, not against a new car - a
+ small chip or a slightly worn seat on an otherwise restored car is minor,
+ not major. If the seller notes something in passing and it would cost a few
+ hundred dollars to put right, it is minor.
 -minor_flaws: a list of short strings for cosmetic or trivial items -
- small chips, worn trim, a squeaky belt, an inoperative clock
--condition_score: an integer 1-10. 1 is a shell or parts car, 3 is a
+ small chips, worn trim, a squeaky belt, an inoperative clock, light wear
+--condition_score: an integer 1-10. 1 is a shell or parts car, 3 is a
  non-running project, 5 is an ordinary driver with honest wear, 7 is a very
- good car with only cosmetic flaws, 9 is a fresh high-quality restoration,
- 10 is concours. The two condition fields must agree: "project" is 1-3,
- "driver" is 4-6, "excellent" is 7-8, "concours" is 9-10. Many major flaws, such as
- Currently documented rust, leaks, or non-working systems pull the score below 5; a car with several is
+ good car with only cosmetic flaws, 9 is exceptional - a high-quality
+ restoration at any age, or an outstandingly preserved original, 10 is
+ concours or better than new. The two condition fields must agree:
+ "project" is 1-3, "driver" is 4-6, "excellent" is 7-8, "concours" is 9-10.
+ A car with no flaws worth listing and a documented restoration or
+ exceptional preservation belongs at 9, not 8 - do not treat 9 and 10 as
+ unreachable. Many major flaws, such as currently documented rust, leaks, or non-working systems pull the score below 5; a car with several is
  a 3 or 4. Minor cosmetic issues pull it down slightly, maybe not at all if they are very minor. Completed quality
- work pulls score up. Restorations in good quality will pull score up. A car can be 9 or 10 even if the description does not state concours.
+ work pulls score up. Restorations in good quality will pull score up.
  Make judgement of grade based on the honest shape the car CURRENTLY is in.
  Do not default to 5 or 6 - decide from the flaws you listed above.
+A car with a documented quality restoration and only cosmetic remarks may be at least a
+9 even if several small items are noted, as long as the rest of the car holds to that standard.
 
 Return only the JSON, no other text.
 
@@ -75,16 +93,35 @@ def extract_json(text):
         return json.loads(text[start:end+1])
     except json.JSONDecodeError:
         return None
+
+_client=None
+
+def ask_api(text):
+    global _client
+    #reads ANTHROPIC_API_KEY from the environment
+    if _client is None:
+        _client=anthropic.Anthropic()    
+    message=_client.messages.create(
+        model=API_MODEL,
+        max_tokens=1000,
+        messages=[{"role":"user","content":PROMPT.format(text=text)}])
+    parts=[b.text for b in message.content if b.type=="text"]
+    if not parts:
+        return None
+    return extract_json("\n".join(parts))
     
 def ask_llm(text):
-    payload={"model":MODEL,
-        "messages":[{"role":"user","content":PROMPT.format(text=text)}],
-        "stream":False,"think":"low",
+    if BACKEND=="api":
+        return ask_api(text)
+    payload={
+        "model":MODEL,
+        "prompt":PROMPT.format(text=text),
+        "stream":False,
         "options":{"temperature":0,"num_ctx":8192},
-        "keep_alive":"30m"}
-    response=requests.post("http://localhost:11434/api/chat",json=payload,timeout=600)
+    }
+    response=requests.post(OLLAMA_URL,json=payload,timeout=600)
     response.raise_for_status()
-    return extract_json(response.json()["message"]["content"])
+    return extract_json(response.json()["response"])
 
 def parse_condition(description):
     #Run description through llm
@@ -96,6 +133,9 @@ def parse_condition(description):
             return {}
     except requests.exceptions.RequestException as e:
         print(f" model call failed, ollama running?: {e}")
+        return {}
+    except anthropic.APIError as e:
+        print(f" api error, skipping: {e}")
         return {}
     except (json.JSONDecodeError,KeyError) as e:
         print(f" model gave bad output, skipping: {e}")

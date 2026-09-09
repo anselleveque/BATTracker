@@ -143,6 +143,7 @@ def predict(cars, target_car=None,as_of=None):
         ("matching_trans", lambda car: car.get("matching_trans")),
         ("service",     lambda car: car.get("recent_service")),
         ("rust",        lambda car: car.get("rust_mentioned")),
+        ("no_mileage",  lambda car: 1 if car.get("mileage") is None else 0),
         #Coupe and unknown are baselines for body type
         ("cabriolet",   lambda car: 1 if car.get("body")=="cabriolet" else 0),
         ("targa",       lambda car: 1 if car.get("body")=="targa" else 0),
@@ -207,20 +208,20 @@ def predict(cars, target_car=None,as_of=None):
     with pm.Model() as model:
         #Things model will learn
         intercept=pm.Normal("intercept",mu=log_price.mean(),sigma=2)
-        b_year=pm.Normal("b_year",mu=0,sigma=1)
-        b_mileage=pm.Normal("b_mileage",mu=0,sigma=1)
-        b_gears=pm.Normal("b_gears",mu=0,sigma=1)
-        b_condition=pm.Normal("b_condition",mu=0,sigma=1)
-        b_score=pm.Normal("b_score",mu=0,sigma=1)
-        b_major_flaws=pm.Normal("b_major_flaws",mu=0,sigma=1)
-        b_time=pm.Normal("b_time",mu=0,sigma=1)
-        noise=pm.HalfNormal("noise",sigma=1)
+        b_year=pm.Normal("b_year",mu=0,sigma=0.3)
+        b_mileage=pm.Normal("b_mileage",mu=0,sigma=0.3)
+        b_gears=pm.Normal("b_gears",mu=0,sigma=0.3)
+        #b_condition=pm.Normal("b_condition",mu=0,sigma=1)
+        b_score=pm.Normal("b_score",mu=0,sigma=0.3)
+        b_major_flaws=pm.Normal("b_major_flaws",mu=0,sigma=0.3)
+        b_time=pm.Normal("b_time",mu=0,sigma=0.3)
+        noise=pm.HalfNormal("noise",sigma=0.3)
 
         b={}
         for feature_name,read_value in BINARY_FEATURES:
             if not oks[feature_name]:
                 continue
-            b[feature_name]=pm.Normal("b_"+feature_name,mu=0,sigma=1)
+            b[feature_name]=pm.Normal("b_"+feature_name,mu=0,sigma=0.3)
         binary_term=0
         for feature_name in b:
             binary_term=binary_term+b[feature_name]*centered[feature_name]
@@ -230,7 +231,7 @@ def predict(cars, target_car=None,as_of=None):
             if not color_ok[c]:
                 continue
             name="b_color_"+c.replace(" ","_")
-            b_colors[c]=pm.Normal(name,mu=0,sigma=1)
+            b_colors[c]=pm.Normal(name,mu=0,sigma=0.3)
         color_term=0
         for c in b_colors:
             color_term=color_term+b_colors[c]*color_arrays[c]
@@ -240,7 +241,7 @@ def predict(cars, target_car=None,as_of=None):
             if not variant_ok[v]:
                 continue
             name="b_var_"+v.replace(".","_").replace(" ","_")
-            b_variants[v]=pm.Normal(name,mu=0,sigma=1)
+            b_variants[v]=pm.Normal(name,mu=0,sigma=0.3)
         variant_term=0
         for v in b_variants:
             variant_term=variant_term+b_variants[v]*variant_arrays[v]
@@ -251,7 +252,7 @@ def predict(cars, target_car=None,as_of=None):
                +b_year*year_scaled
                +b_mileage*log_mileage_centered
                +b_gears*gears_centered
-               +b_condition*condition_centered
+               #+b_condition*condition_centered
                +b_score*score_centered
                +b_major_flaws*major_centered
                +color_term
@@ -281,7 +282,7 @@ def predict(cars, target_car=None,as_of=None):
         "per_year":percent_effect("b_year",1.0/year_std),
         "per_10k_miles":percent_effect("b_mileage",per_10k_scale) if mileage_ok else None,
         "per_gear":percent_effect("b_gears") if gears_ok  else None,
-        "per_condition_step":percent_effect("b_condition") if cond_ok else None,
+        #"per_condition_step":percent_effect("b_condition") if cond_ok else None,
         "per_score_point":percent_effect("b_score") if score_ok else None,
         "per_major_flaw":percent_effect("b_major_flaws") if major_ok else None,
         "market_per_year":percent_effect("b_time"),
@@ -375,7 +376,7 @@ def predict(cars, target_car=None,as_of=None):
                        +draws("b_year")*target_year
                        +draws("b_mileage")*target_mileage
                        +draws("b_gears")*target_gears
-                       +draws("b_condition")*target_condition
+                       #+draws("b_condition")*target_condition
                        +draws("b_score")*target_score
                        +draws("b_major_flaws")*target_major
                        +color_predicted
@@ -389,7 +390,7 @@ def predict(cars, target_car=None,as_of=None):
         "year":contrib("b_year",target_year),
         "mileage":contrib("b_mileage",target_mileage),
         "gears":contrib("b_gears",target_gears),
-        "condition":contrib("b_condition",target_condition),
+        #"condition":contrib("b_condition",target_condition),
         "score":contrib("b_score",target_score),
         "major_flaws":contrib("b_major_flaws",target_major),
         "market_time":contrib("b_time",time_now),

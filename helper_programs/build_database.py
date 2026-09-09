@@ -11,22 +11,20 @@ import deep_dive_stats.llm_extract as llm_extract
 #Secs to wait between browser laods
 DELAY=1
 
-def build(search,year_from=None,year_to=None):
-    sales_db.setup()
-
+def build(search,year_from=None,year_to=None,skip_words=None):
+    print(f"\n=== {search} ===")
     print("Getting Nonce")
     nonce=bat_api.get_nonce()
 
     print(f"Fetching all sales for '{search}'")
     history=bat_api.get_sale_history(search,nonce,year_from,year_to,max_pages=100)
-
-    #Skip other titles
-    skip=input("Skip titles containing (comma separated, blank for none): ")
-    if skip:
-        bad=[w.strip().lower() for w in skip.split(",") if w.strip()]
+    #the search is loose - "Ford GT" pulls Mustang GTs. Drop them before
+    #spending a page load and a model call on each one.
+    if skip_words:
         before=len(history)
-        history=[c for c in history if not any(w in (c.get("title") or "").lower() for w in bad)]
-        print(f"dropped {before-len(history)} listings matching {bad}")
+        history=[c for c in history
+                 if not any(w in (c.get("title") or "").lower() for w in skip_words)]
+        print(f"dropped {before-len(history)} listings matching {skip_words}")
     print(f"Found {len(history)} sales. Saving basics first")
     sales_db.save_comps(history)
 
@@ -75,18 +73,21 @@ def build(search,year_from=None,year_to=None):
     print(f"\nLoaded {done} new, skipped {skipped} already done, failed {failed}")
     return done,skipped,failed
 
-def build_many(searches):
-    #Run build() on each model in list
+def build_many(searches,skip_words=None):
     sales_db.setup()
+    if llm_extract.BACKEND=="api":
+        print(f"grading with {llm_extract.API_MODEL} (Anthropic API)")
+    else:
+        print(f"grading with {llm_extract.MODEL} (local Ollama)")
     print(f"Loading {len(searches)} models")
 
     results=[]
     for search in searches:
         try:
-            done,skipped,failed=build(search)
+            done,skipped,failed=build(search,skip_words=skip_words)
             results.append((search,done,skipped,failed))
         except Exception as e:
-            print(f" {search} failed:{type(e).__name__}-{e}")
+            print(f"'{search}' failed entirely: {type(e).__name__} - {e}")
             results.append((search,0,0,0))
 
     print(f"\nAll models loaded")
@@ -121,9 +122,15 @@ def main():
     if not searches:
         print("No models entered")
         return
-    
-    print(f"\n {len(searches)} models: {', '.join(searches)}")
-    build_many(searches)
+
+    skip=input("Skip titles containing (comma separated, blank for none): ").strip()
+    if skip:
+        skip_words=[w.strip().lower() for w in skip.split(",") if w.strip()]
+    else:
+        skip_words=None
+
+    print(f"\nGot {len(searches)} models: {', '.join(searches)}")
+    build_many(searches,skip_words)
     
 
 if __name__=="__main__":

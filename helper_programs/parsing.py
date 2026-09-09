@@ -160,21 +160,36 @@ def variants_info(title):
              "year","years","owned","modified","project","restored","original","k",
              "speed","powered","bmw","porsche","mercedes","benz","alfa","romeo",
              "ferrari","jaguar","chevrolet","ford","toyota","nissan","datsun",
-             "coupe","convertible","sedan","wagon","hardtop")
+             "coupe","convertible","sedan","wagon","hardtop","cabriolet","targa","roadster",
+             "spyder","spider")
     #Find different trims from title, e.g in BMW E9, 2800,3.0csi, 3.0csl all in same model but diff cars
     if not title or not is_car(title):
         return set()
-    
-    t=(title or "").lower()
+    t=title.lower()
     t=re.sub(r"\b(19|20)\d{2}\b"," ",t)
     t=re.sub(r"\b[\d,]+k?[- ]?miles?\b"," ",t)
     t=re.sub(r"\b[\d,]+k?[- ]?(?:kilometers|kilometres|km)\b"," ",t)
+    #gear count is already a feature
+    t=re.sub(r"\b\d+[- ]?speed\b"," ",t)     
     t=re.sub(r"[^a-z0-9.]+"," ",t)
+    
     out=set()
+    previous=None
     for w in t.split():
-        if w in TITLE_NOISE or len(w)<2:
+        if w in TITLE_NOISE:
+            previous=None
             continue
-        out.add(w)
+        #a single letter is a title trim
+        if len(w)==1 and w.isalpha() and previous is not None:
+            out.discard(previous)
+            out.add(previous+"_"+w)
+            previous=None
+            continue
+        if len(w)>=2:
+            out.add(w)
+            previous=w
+        else:
+            previous=None
     return out
 
 
@@ -298,7 +313,6 @@ def parse_details(text):
     #Used for deep dive
     if not text:
         return {}
-    km_to_miles=0.621371
     features={}
 
     #assume original engine
@@ -314,7 +328,7 @@ def parse_details(text):
                 features["chassis"]=parts[1].strip()
 
         #Mileage (mi)
-        found_mi=re.search(r'([\d,]+)(k?)\s*miles',low)
+        found_mi=re.search(r'\b([\d]{1,3}(?:,\d{3})*|\d+k)\s*miles',low)
         if found_mi:
             miles=real_mileage(number_from(found_mi.group(1)))
             if miles is not None:
