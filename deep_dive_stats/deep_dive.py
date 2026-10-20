@@ -136,6 +136,14 @@ def main():
                 "rust_mentioned":target_condition.get("rust_mentioned"),
                 "flaw_count":count_flaws(target_condition),
                 "color":parsing.clean_color(details.get("color")),
+                #come from details box, so work even if car hasn't been in db
+                "pts":1 if details.get("pts") else 0,
+                "coa":1 if details.get("coa") else 0,
+                "window_sticker":1 if details.get("window_sticker") else 0,
+                "has_carfax":1 if details.get("has_carfax") else 0,
+                "original_engine":1 if details.get("original_engine") else 0,
+                #the appraiser reads this alongside the comps
+                "description":info.get("description"),
             }
     
     print("\nThis car: ")
@@ -233,8 +241,18 @@ def main():
             else:
                 print("No key or value data")
 
-    for key,value in effects.items():
-        print(f" {key}: {show_percent(value)}")
+    import deep_dive_stats.llm_appraise as llm_appraise
+    guess=llm_appraise.appraise(target_car,history)
+    if guess:
+        print(f"\nAppraiser (reading the {guess['comps_used']} closest sales):")
+        print(f" estimate: ${guess['estimate']:,}   "
+              f"range ${guess['low']:,} to ${guess['high']:,}")
+        if guess.get("reasoning"):
+            print(f" {guess['reasoning']}")
+        gap=abs(guess["estimate"]-result["predicted"])/result["predicted"]
+        if gap>=0.25:
+            print(f" -> {gap*100:.0f}% apart from the model. When these two")
+            print("    disagree this much, read the comps yourself.")
 
     
 

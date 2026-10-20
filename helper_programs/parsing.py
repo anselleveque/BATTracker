@@ -161,7 +161,7 @@ def variants_info(title):
              "speed","powered","bmw","porsche","mercedes","benz","alfa","romeo",
              "ferrari","jaguar","chevrolet","ford","toyota","nissan","datsun",
              "coupe","convertible","sedan","wagon","hardtop","cabriolet","targa","roadster",
-             "spyder","spider")
+             "spyder","spider","turbo")
     #Find different trims from title, e.g in BMW E9, 2800,3.0csi, 3.0csl all in same model but diff cars
     if not title or not is_car(title):
         return set()

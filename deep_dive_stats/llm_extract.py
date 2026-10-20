@@ -109,19 +109,26 @@ def ask_api(text):
     if not parts:
         return None
     return extract_json("\n".join(parts))
-    
-def ask_llm(text):
+
+def ask_raw(prompt):
+    #send a prompt, get text back. Appraiser needs b/c it builds its own prompt
+    global _client
     if BACKEND=="api":
-        return ask_api(text)
-    payload={
-        "model":MODEL,
-        "prompt":PROMPT.format(text=text),
-        "stream":False,
-        "options":{"temperature":0,"num_ctx":8192},
-    }
+        if _client is None:
+            _client=anthropic.Anthropic()
+        message=_client.messages.create(
+            model=API_MODEL,max_tokens=1000,
+            messages=[{"role":"user","content":prompt}])
+        parts=[b.text for b in message.content if b.type=="text"]
+        return "\n".join(parts) if parts else None
+    payload={"model":MODEL,"prompt":prompt,"stream":False,
+             "options":{"temperature":0,"num_ctx":8192},"keep_alive":"30m"}
     response=requests.post(OLLAMA_URL,json=payload,timeout=600)
     response.raise_for_status()
-    return extract_json(response.json()["response"])
+    return response.json()["response"]
+    
+def ask_llm(text):
+    return extract_json(ask_raw(PROMPT.format(text=text)) or "")
 
 def parse_condition(description):
     #Run description through llm

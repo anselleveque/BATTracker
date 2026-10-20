@@ -141,6 +141,10 @@ def predict(cars, target_car=None,as_of=None):
         ("no_reserve",  lambda car: 1 if "no reserve" in (car.get("title") or "").lower() else 0),
         ("matching_eng",   lambda car: car.get("matching_engine")),
         ("matching_trans", lambda car: car.get("matching_trans")),
+        ("pts",            lambda car: car.get("pts")),
+        ("coa",            lambda car: car.get("coa")),
+        ("window_sticker", lambda car: car.get("window_sticker")),
+        ("original_engine",lambda car: car.get("original_engine")),
         ("service",     lambda car: car.get("recent_service")),
         ("rust",        lambda car: car.get("rust_mentioned")),
         ("no_mileage",  lambda car: 1 if car.get("mileage") is None else 0),
@@ -208,14 +212,13 @@ def predict(cars, target_car=None,as_of=None):
     with pm.Model() as model:
         #Things model will learn
         intercept=pm.Normal("intercept",mu=log_price.mean(),sigma=2)
-        b_year=pm.Normal("b_year",mu=0,sigma=0.3)
-        b_mileage=pm.Normal("b_mileage",mu=0,sigma=0.3)
-        b_gears=pm.Normal("b_gears",mu=0,sigma=0.3)
-        #b_condition=pm.Normal("b_condition",mu=0,sigma=1)
-        b_score=pm.Normal("b_score",mu=0,sigma=0.3)
-        b_major_flaws=pm.Normal("b_major_flaws",mu=0,sigma=0.3)
-        b_time=pm.Normal("b_time",mu=0,sigma=0.3)
-        noise=pm.HalfNormal("noise",sigma=0.3)
+        b_year=pm.Normal("b_year",mu=0,sigma=1)
+        b_mileage=pm.Normal("b_mileage",mu=0,sigma=1)
+        b_gears=pm.Normal("b_gears",mu=0,sigma=1)
+        b_score=pm.Normal("b_score",mu=0,sigma=1)
+        b_major_flaws=pm.Normal("b_major_flaws",mu=0,sigma=1)
+        b_time=pm.Normal("b_time",mu=0,sigma=1)
+        noise=pm.HalfNormal("noise",sigma=1)
 
         b={}
         for feature_name,read_value in BINARY_FEATURES:
@@ -252,7 +255,6 @@ def predict(cars, target_car=None,as_of=None):
                +b_year*year_scaled
                +b_mileage*log_mileage_centered
                +b_gears*gears_centered
-               #+b_condition*condition_centered
                +b_score*score_centered
                +b_major_flaws*major_centered
                +color_term
@@ -282,7 +284,6 @@ def predict(cars, target_car=None,as_of=None):
         "per_year":percent_effect("b_year",1.0/year_std),
         "per_10k_miles":percent_effect("b_mileage",per_10k_scale) if mileage_ok else None,
         "per_gear":percent_effect("b_gears") if gears_ok  else None,
-        #"per_condition_step":percent_effect("b_condition") if cond_ok else None,
         "per_score_point":percent_effect("b_score") if score_ok else None,
         "per_major_flaw":percent_effect("b_major_flaws") if major_ok else None,
         "market_per_year":percent_effect("b_time"),
@@ -324,12 +325,6 @@ def predict(cars, target_car=None,as_of=None):
         else:
             target_gears=0.0
 
-        target_grade=grade_map.get(target_car.get("condition_grade"))
-        if target_grade is not None and cond_ok:
-            target_condition=target_grade-cond_mean
-        else:
-            target_condition=0.0
-
         if target_car.get("condition_score") is not None and score_ok:
             target_score=float(target_car["condition_score"])-score_mean
         else:
@@ -369,14 +364,17 @@ def predict(cars, target_car=None,as_of=None):
             when=as_of
         else:
             when=datetime.now()
-        time_now=(when-earliest).days/365.0-sale_time_mean
+        #Don't extrapolate market past last sale in pool
+        #on thin pool b_time is noisy, carrying it forwards gives error
+        latest=sale_time.max()
+        raw_time=(when-earliest).days/365.0
+        time_now=min(raw_time,latest)-sale_time_mean
 
         predicted_log=(draws("intercept")
                        +target_term
                        +draws("b_year")*target_year
                        +draws("b_mileage")*target_mileage
                        +draws("b_gears")*target_gears
-                       #+draws("b_condition")*target_condition
                        +draws("b_score")*target_score
                        +draws("b_major_flaws")*target_major
                        +color_predicted
@@ -390,7 +388,6 @@ def predict(cars, target_car=None,as_of=None):
         "year":contrib("b_year",target_year),
         "mileage":contrib("b_mileage",target_mileage),
         "gears":contrib("b_gears",target_gears),
-        #"condition":contrib("b_condition",target_condition),
         "score":contrib("b_score",target_score),
         "major_flaws":contrib("b_major_flaws",target_major),
         "market_time":contrib("b_time",time_now),

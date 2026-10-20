@@ -41,6 +41,11 @@ def setup():
                 condition_score INTEGER,
                 major_flaws TEXT,
                 minor_flaws TEXT,
+                pts INTEGER,
+                coa INTEGER,
+                window_sticker INTEGER,
+                has_carfax INTEGER,
+                original_engine INTEGER,
                 enriched INTEGER DEFAULT 0
             )""")
     con.commit()
@@ -129,6 +134,12 @@ def load_comps(search_words,year_from=None,year_to=None,model=None,max_age_years
             "rust_mentioned":row["rust_mentioned"],
             "recent_service":row["recent_service"],
             "condition_score":row["condition_score"],
+            "pts":row["pts"],
+            "coa":row["coa"],
+            "window_sticker":row["window_sticker"],
+            "has_carfax":row["has_carfax"],
+            "original_engine":row["original_engine"],
+            "description":row["description"],
             "flaw_count":count_flaws(row["notable_flaws"]),
             "major_flaw_count":count_flaws(row["major_flaws"]),
             "minor_flaw_count":count_flaws(row["minor_flaws"]),
@@ -165,6 +176,11 @@ def get_condition(url):
         "rust_mentioned":row["rust_mentioned"],
         "recent_service":row["recent_service"],
         "condition_score":row["condition_score"],
+        "pts":row["pts"],
+        "coa":row["coa"],
+        "window_sticker":row["window_sticker"],
+        "has_carfax":row["has_carfax"],
+        "original_engine":row["original_engine"],
         "flaw_count":count_flaws(row["notable_flaws"]),
         "major_flaw_count":count_flaws(row["major_flaws"]),
         "minor_flaw_count":count_flaws(row["minor_flaws"]),
@@ -185,6 +201,13 @@ def save_condition(url,features,model=None,description=None,chassis=None,details
     miles=parsing.mileage_from(details,description)
     color=parsing.color_from(details,description)
 
+    flags={}
+    if details:
+        try:
+            flags=parsing.parse_details(details)
+        except Exception:
+            flags={}
+
     con=sqlite3.connect(DB)
     con.execute("INSERT OR IGNORE INTO sales(url,enriched) VALUES(?,0)",(url,))
     major=features.get("major_flaws",[])
@@ -194,7 +217,8 @@ def save_condition(url,features,model=None,description=None,chassis=None,details
     minor_text=json.dumps(minor)
     con.execute("""UPDATE sales SET
                 condition_grade=?,matching_engine=?,matching_trans=?,
-                rust_mentioned=?,recent_service=?,notable_flaws=?,
+                rust_mentioned=?,recent_service=?,pts=?,coa=?,window_sticker=?,
+                has_carfax=?,original_engine=?,notable_flaws=?,
                 condition_score=?,major_flaws=?,minor_flaws=?,
                 model=?,description=?,chassis=?,details=?,
                 mileage=COALESCE(mileage,?),color=COALESCE(color,?),enriched=1
@@ -204,6 +228,11 @@ def save_condition(url,features,model=None,description=None,chassis=None,details
                 to_int_or_none(features.get("matching_trans")),
                 to_int_or_none(features.get("rust_mentioned")),
                 to_int_or_none(features.get("recent_service")),
+                to_int_or_none(flags.get("pts")),
+                to_int_or_none(flags.get("coa")),
+                to_int_or_none(flags.get("window_sticker")),
+                to_int_or_none(flags.get("has_carfax")),
+                to_int_or_none(flags.get("original_engine")),
                 flaws,features.get("condition_score"),major_text,minor_text,
                 model,description,chassis,details,miles,color,url))
     con.commit()
